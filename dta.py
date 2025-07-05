@@ -4,8 +4,136 @@ import os
 import ftplib
 import shutil
 import threading
+import re
+import json
+import time
 
 logger = logging.getLogger(__name__)
+
+class DTAProcessor:
+    '''Processes DTAs and turns them into native Python data collections'''
+    '''TODO: Currently nested list. Convert nested list to dictionary. On write back convert from dict to nested then nested to .dta'''
+    def tokenize(dta: str):
+        return re.findall(r'\'[^\']*\'|\"[^\"]*\"|\(|\)|;[^\n]*|[^\s()]+', dta)
+
+    @staticmethod
+    def parse_tokens(tokens, i=0):
+        parsed = []
+        while i < len(tokens):
+            token = tokens[i]
+
+            if token == '(':
+                i, subtree = DTAProcessor.parse_tokens(tokens, i + 1)
+                parsed.append(subtree)
+            elif token == ')':
+                return i, parsed
+            elif token.startswith(';'):
+                pass
+            else:
+                parsed_atom = DTAProcessor.parse_atom(token)
+                parsed.append(parsed_atom)
+            i += 1
+        return i, parsed
+
+    @staticmethod
+    def parse_atom(token):
+        if token.startswith("\'") and token.endswith("\'"):
+            return token[1:-1]
+        if token.upper() == 'TRUE':
+            return True
+        if token.upper() == 'FALSE':
+            return False
+        try:
+            if '.' in token:
+                return float(token)
+            elif token.isdecimal() or (token[0] == '-' and token[1:].isdecimal()):
+                return int(token)
+            else:
+                return token
+        except ValueError:
+            return token
+
+    @staticmethod
+    def dta_to_nested_list(dta):
+        tokens = DTAProcessor.tokenize(dta)
+        _, parsed = DTAProcessor.parse_tokens(tokens)
+        return parsed
+
+    @staticmethod
+    def nested_list_to_dta(nested,level=1,indent="   "):
+        s = ""
+        if isinstance(nested, list):
+            s = "("
+            if any(isinstance(each,list) for each in nested):
+                for i,each in enumerate(nested):
+                    s += "\n"+(indent*level) + (DTAProcessor.nested_list_to_dta(each,level+1) + " " if i != len(nested)-1 else DTAProcessor.nested_list_to_dta(each,level+1))
+                s += "\n"+(indent*(level-1))+")"
+            else:
+                for i,each in enumerate(nested):
+                    s += (DTAProcessor.nested_list_to_dta(each, level) + " ") if i != len(nested)-1 else DTAProcessor.nested_list_to_dta(each,level)
+                s += ")"
+        else:
+            s = str(nested)
+        return s
+
+    @staticmethod
+    def __nested_list_to_dict__(nest:list):
+        #print("Call w/:", nest)
+        if len(nest) == 2:
+            if all(isinstance(item, str) for item in nest) or (isinstance(nest[0],str) and (isinstance(nest[1], int) or isinstance(nest[1], float))):
+                k= nest[0]
+                v = nest[1]
+                #print("K,V:", {k:v})
+                return {k:v}
+            elif all(isinstance(item, str) for item in nest) or all(isinstance(item, int) for item in nest) or all(isinstance(item, float) for item in nest):
+                #print("Set:", nest)
+                return nest
+            
+            elif isinstance(nest[0], str) and isinstance(nest[1], list):
+                k = nest[0]
+                v = nest_to_dict(nest[1])
+                #print("K,V:", {k:v})
+                return {k:v}
+            
+            elif isinstance(nest[0], str) and all(isinstance(item, list) for item in nest[1]):
+                k = nest[0]
+                v = [nest_to_dict(item) for item in nest[1:]]
+                #print("K,V:",{k:v})
+                return {k:v}
+        else:
+            if isinstance(nest[0], str) and all(isinstance(item,list) for item in nest[1:]):
+                k = nest[0]
+                v = [nest_to_dict(item) for item in nest[1:]]
+                #print("K,V:",{k:v})
+                return {k:v}
+            elif all(isinstance(item, list) for item in nest):
+                #print("Nested Set:", nest)
+                return [nest_to_dict(item) for item in nest]
+            elif all(isinstance(item, str) for item in nest) or all(isinstance(item, int) for item in nest) or all(isinstance(item, float) for item in nest):
+                #print("Set:", nest)
+                return nest
+            else:
+                return nest
+
+    @staticmethod
+    def __dict_to_nested_list__(dta_dict):
+        print("Dict:",dta_dict)
+        if isinstance(dta_dict, list) and all(isinstance(item,dict) for item in dta_dict):
+            lod = [dict_to_nested(item) for item in dta_dict]
+            print("LIST OF DICTS", lod)
+            return [dict_to_nested(item) for item in dta_dict]
+        elif isinstance(dta_dict, dict):
+            if len(dta_dict.items()) == 1:
+                dict_list = list(list(dta_dict.items())[0])
+                if isinstance(dict_list[1], list):
+                    keyed_nest = [dict_list[0]] + [[dict_to_nested(item) for item in dict_list[1]]]
+                    print("KEYED!", keyed_nest)
+                    return keyed_nest
+                else:
+                    print("K,V!", dict_list)
+                    return dict_list
+        else:
+            return dta_dict
 
 class Song:
     '''
@@ -14,12 +142,13 @@ class Song:
     def __init__(self):
         self.name = "" #name of song
         self.artist = "" #artist of song
+        self.nested = [] #song data from DTA as nested list
         self.content = "" #all the text for the song
         self.excluded = False #should the song be excluded
         self.reason = "" #why
 
     def __eq__(self, other:'Song')->bool:
-        return (self.name == other.name) and (self.artist == other.artist) and (self.content == other.content)
+        return (self.name == other.name) and (self.artist == other.artist)
     def __hash__(self)->int:
         return hash(self.name, self.artist, self.content)
     def __str__(self)->str:
@@ -90,15 +219,27 @@ class SongManager:
     def read_dtas(self):
         '''Open each .dta that was downloaded and process it'''
         for dir in self.dtas.keys():
-            lines = []
-            with open(self.to_win_dir(dir+"/songs.dtab"), "r") as file:
-                lines = file.readlines()
-            file.close()
-            logger.debug("File at "+ (str)(self.to_win_dir(dir))+ " read.")
-            self.dtas[dir] = "".join(lines)
-            self.songs[dir] = self.process_dta(self.dtas[dir])
+            self.songs[dir] = self.process_dta(self.to_win_dir(dir+"/songs.dtab"))
+        
+        #GET RID OF COPIES???
+        # all_songs = [song for songs in self.songs.values() for song in songs]
+        # copies = 0
+        # for i,song in enumerate(all_songs):
+        #     for s in all_songs[i:]:
+        #         if song == s and song.nested != s.nested:
+        #             print(song, s)
+        #             copies += 1
+        # print(copies)
+            #OLD METHOD
+            # lines = []
+            # with open(self.to_win_dir(dir+"/songs.dtab"), "r") as file:
+            #     lines = file.readlines()
+            # file.close()
+            # logger.debug("File at "+ (str)(self.to_win_dir(dir))+ " read.")
+            # self.dtas[dir] = "".join(lines)
+            # self.songs[dir] = self.__process_dta_old__(self.dtas[dir])
 
-    def process_dta(self, file_str):
+    def __process_dta_old__(self, file_str):
         '''Read the file, parse its content and return list of songs in file. Flawed since some .dta formats cannot be parsed.'''
         song_list = []
         paran_counter = 0
@@ -187,10 +328,27 @@ class SongManager:
                         buffer += char
         return song_list
 
+    def process_dta(self, file_path):
+        processor = DTAProcessor()
+        song_list = []
+        nested = processor.dta_to_nested_list(open(file_path, 'r').read())
+        for each in nested:
+            if not isinstance(each,list) or (isinstance(each,list) and len(each) < 2) or (isinstance(each,list) and len(each) >= 2 and ((not isinstance(each[1],list) or not isinstance(each[2],list)))):
+                continue
+            s = Song()
+            if each[1][0] == 'name':
+                s.name = each[1][1] if isinstance(each[1][1], str) else str(each[1][1])
+            if each[2][0] == 'artist':
+                s.artist = each[2][1] if isinstance(each[2][1], str) else str(each[2][1])
+            s.nested = each
+            song_list.append(s)
+        return song_list
+
+
     def exclude_from_whitelists(self):
         '''Check each song against whitelists, exclude if not on whitelist'''
         for song in [song for songs in self.songs.values() for song in songs]:
-            if (song.artist in self.whitelist_artist) or (song.name in self.whitelist_names):
+            if (song.artist[1:-1] in self.whitelist_artist) or (song.name[1:-1] in self.whitelist_names):
                 if(song.artist in self.whitelist_artist):
                     logger.debug("Whitelisted: " + (str)(f"{song.name} by {song.artist} for artist name"))
                 else:
@@ -277,12 +435,21 @@ class SongManager:
 
     def create_modified_dta(self,dir):
         logger.debug("Finalizing "+ (str)(len(self.songs[dir])) + " songs at:" + dir)
+        processor = DTAProcessor()
         modified = ""
         for song in self.songs[dir]:
-            if song not in self.excluded: #if the song is to be excluded
+             if song not in self.excluded: #if the song is to be excluded
                 logger.debug("Adding " + song.name + " by " +  song.artist)
-                modified += song.content
+                modified += processor.nested_list_to_dta(song.nested) + "\n"
         self.dtas[dir] = modified
+
+        #OLD METHOD
+        # modified = ""
+        # for song in self.songs[dir]:
+        #     if song not in self.excluded: #if the song is to be excluded
+        #         logger.debug("Adding " + song.name + " by " +  song.artist)
+        #         modified += song.content
+        # self.dtas[dir] = modified
 
     def write_modified_dta(self, dir):
         if not os.path.exists(self.to_win_dir(dir.replace("FROM", "TO"))): #if the path for the song in the TO directory doesn't exist
@@ -299,7 +466,7 @@ class SongManager:
     def excluded_to_csv(self):
         csv_content = "!$Artist$!,!$Song Name$!\n"
         for song in self.excluded:
-            csv_content += "\""+song.artist+"\"" + "," + "\""+song.name+"\"" + "\n"
+            csv_content += "\""+song.artist.strip("\"")+"\"" + "," + "\""+song.name.strip("\"")+"\"" + "\n"
         with open(self.to_win_dir(self.cwd+"/excluded.csv"), "w") as csv_file:
             csv_file.write(csv_content)
 
@@ -325,38 +492,58 @@ class RManager:
             os.mkdir(self.song_manager.to_win_dir(self.song_manager.cwd+"/TO")) #create the dir that will hold ftp uploads
 
     def get_dta_dirs(self):
+        max_retries = 5
+        retry_delay = 5
+        processed_dirs = []
         if(self.song_manager.ip != ""):
-            with ftplib.FTP(self.song_manager.ip, encoding='latin-1') as ftp:
-                logger.info("Connected to PS3, logging in and searching...")
-                ftp.login()
-                for dir in self.rb_dirs:
-                    dir = self.song_manager.to_ps3_dir(dir)
-                    ftp.cwd(dir)
-                    for name,type in ftp.mlsd():
-                        if type['type'] == 'dir':
-                            ftp.cwd(name)
-                            for name_1,type_1 in ftp.mlsd():
-                                if (type_1['type'] == 'dir' and name_1 == "songs"):
-                                    dtab_found = False
-                                    dta_found = False
-                                    ftp.cwd("songs")
-                                    for name_2,type_2 in ftp.mlsd():
-                                        if type_2['type'] == 'file' and name_2.endswith(".dtab"):
-                                            dtab_found = True
-                                            path = ftp.pwd()
-                                            logger.debug("Found a .dtab at: "+ (str)(path))
-                                            self.dta_dirs[path] = True
-                                        elif type_2['type'] == 'file' and name_2.endswith(".dta"):
-                                            dta_found = True
-                                            path = ftp.pwd()
-                                            logger.debug("Found a .dta at: " + (str)(path))
-                                    if not dtab_found and dta_found:
-                                        path = ftp.pwd()
-                                        logger.debug("No .dtab found at: " + (str)(path) +", using .dta.")
-                                        self.dta_dirs[path] = False
-                        ftp.cwd(dir)
-                ftp.close()
-                logger.info("Closed FTP connection with PS3. Returning directories.")
+            for attempt in range(max_retries):
+                try:
+                    with ftplib.FTP(self.song_manager.ip, encoding='latin-1') as ftp:
+                        logger.info("Connected to PS3, logging in and searching...")
+                        ftp.login()
+                        for dir in self.rb_dirs:
+                            if dir in processed_dirs:
+                                continue
+                            dir = self.song_manager.to_ps3_dir(dir)
+                            ftp.cwd(dir)
+                            for name,type in ftp.mlsd():
+                                if type['type'] == 'dir':
+                                    if dir+"/"+name in processed_dirs:
+                                        continue
+                                    ftp.cwd(name)
+                                    for name_1,type_1 in ftp.mlsd():
+                                        if (type_1['type'] == 'dir' and name_1 == "songs"):
+                                            dtab_found = False
+                                            dta_found = False
+                                            ftp.cwd("songs")
+                                            logger.debug(f"In directory: {dir+"/"+name}")
+                                            for name_2,type_2 in ftp.mlsd():
+                                                if type_2['type'] == 'file' and name_2.endswith(".dtab"):
+                                                    dtab_found = True
+                                                    path = ftp.pwd()
+                                                    logger.debug("Found a .dtab at: "+ (str)(path))
+                                                    self.dta_dirs[path] = True
+                                                    processed_dirs.append(dir+"/"+name)
+                                                elif type_2['type'] == 'file' and name_2.endswith(".dta"):
+                                                    dta_found = True
+                                                    path = ftp.pwd()
+                                                    logger.debug("Found a .dta at: " + (str)(path))
+                                            if not dtab_found and dta_found:
+                                                path = ftp.pwd()
+                                                logger.debug("No .dtab found at: " + (str)(path) +", using .dta.")
+                                                self.dta_dirs[path] = False
+                                                processed_dirs.append(dir+"/"+name)
+                                ftp.cwd(dir)
+                        ftp.close()
+                        logger.info("Closed FTP connection with PS3. Returning directories.")
+                except ftplib.error_temp as e:
+                    logger.warning(f"Attempt {attempt + 1} failed with error: {e}")
+                    if attempt < max_retries - 1:
+                        logger.info(f"Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                    else:
+                        logger.error("Max retries reached. Could not complete the operation.")
+                        raise
         else:
             os.chdir(self.song_manager.emupath)
             for dir in self.rb_dirs:
@@ -428,7 +615,7 @@ class RManager:
                 ftp.close()
         else:
             for dir in self.dta_dirs:
-                logger.debug("Copying .dta/.dtab at: "+ (str)(self.song_manager.cwd+"/TO"+dir)+", to:" + (str)(dir))
+                logger.debug("Copying .dta/.dtab at: "+ (str)(self.song_manager.cwd+"/TO"+dir)+", to:" + self.song_manager.emupath+"/"+dir)
                 shutil.copy(self.song_manager.to_win_dir(self.song_manager.cwd+"/TO"+dir+"/songs.dta"),self.song_manager.emupath+"/"+dir+"/songs.dta")
                 shutil.copy(self.song_manager.to_win_dir(self.song_manager.cwd+"/TO"+dir+"/songs.dtab"),self.song_manager.emupath+"/"+dir+"/songs.dtab")
 
@@ -439,10 +626,14 @@ class RManager:
         for root, dirs, files in os.walk(dir):
             for file in files:
                 if file.lower().endswith("dtab"):
+                    if "TO" in dir:
+                        continue
                     paths.append(self.song_manager.to_win_dir(dir+"/songs.dtab"))
                     return paths
             for file in files:
                 if file.lower().endswith("dta"):
+                    if "TO" in dir:
+                        continue
                     paths.append(self.song_manager.to_win_dir(dir+"/songs.dta"))
                     return paths
             
@@ -479,10 +670,10 @@ class RManager:
                 shutil.copy(self.song_manager.to_win_dir(self.song_manager.cwd+"/FROM"+dir+"/songs.dtab"),self.song_manager.emupath+"/"+dir+"/songs.dtab")
 
 def main():
-    #logging.basicConfig(filename='dta.log', encoding="utf-8", level=logging.INFO,format='%(asctime)s - %(message)s')
-    #normal()
     logging.basicConfig(filename='dta.log', encoding="utf-8", level=logging.DEBUG,format='%(asctime)s - %(message)s')
-    debug()
+    normal()
+    #logging.basicConfig(filename='dta.log', encoding="utf-8", level=logging.DEBUG,format='%(asctime)s - %(message)s')
+    #debug()
 
 def normal():
     #USE to_win_dir WHEN CHECKING LOCAL DIRS, USE to_ps3_dir WHEN CHECKING REMOTE DIRS
@@ -525,8 +716,8 @@ def normal():
     print("Successfully read .dta/.dtab.")
 
     #EXCLUSION
-    logger.info(f"{len([song for songs in song_manager.songs for song in songs])} songs found!")
-    print(f"{len([song for songs in song_manager.songs for song in songs])} songs found!")
+    logger.info(f"{len([song for songs in song_manager.songs.values() for song in songs])} songs found!")
+    print(f"{len([song for songs in song_manager.songs.values() for song in songs])} songs found!")
     logger.info("Excluding songs not in whitelists...")
     print("Excluding songs not in whitelists...")
     song_manager.exclude_from_whitelists()
@@ -539,6 +730,9 @@ def normal():
     song_manager.manual_elimination()
     logger.info("Successfully finished manual elimination.")
     print("Successfully finished manual elimination.")
+
+    if(song_manager.export_excluded):
+        song_manager.excluded_to_csv()
 
     #FINALIZING
     logger.info("Storing updated .dta/.dtab...")
@@ -602,10 +796,8 @@ def debug():
     song_manager.exclude_from_whitelists()
     logger.info("Successfully excluded songs not in whitelists.")
     print("Successfully excluded songs not in whitelists.")
-
-    if(song_manager.export_excluded):
-        song_manager.excluded_to_csv()
-        exit()
+    logger.info(f"There are {len(song_manager.kept)} songs left!.")
+    print(f"There are {len(song_manager.kept)}  songs left!.")
 
     #FINALIZE
     logger.info("Storing updated .dta/.dtab...")
@@ -613,5 +805,10 @@ def debug():
     song_manager.finalize()
     logger.info("Successfully made new .dta/.dtab.")
     print("Successfully made new .dta/.dtab.")
+    logger.info("Uploading .dta/.dtab's.")
+    print("Uploading .dta/.dtab's.")
+    rb_manager.upload()
+    logger.info("Uploaded .dta/.dtab's.")
+    print("Uploaded .dta/.dtab's.")
 
 main()
