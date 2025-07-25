@@ -1,15 +1,15 @@
 import requests
-from openpyxl import load_workbook
-import sqlite3
+import openpyxl
 import logging
 import xlsxwriter
 
 class XLSXManager:
-    DB_FILE = "songs.db"
+    # TODO database manager
+    # DB_FILE = "songs.db"
     OUTPUT_FILE = "songs.xlsx"
 
     def __init__(self, DL_URL):
-        self.logger = logging.getLogger('RBManager')
+        self.logger = logging.getLogger('XLSXManager')
         self.DL_URL = DL_URL
 
     def download_google_sheet_xlsx(self, max_attempts=10):
@@ -21,14 +21,13 @@ class XLSXManager:
                     with open(self.OUTPUT_FILE, "wb") as f:
                         f.write(response.content)
                     self.logger.info(f"[XLSXManager] Downloaded sheet to {self.OUTPUT_FILE}")
-                    return
                 else:
-                    raise requests.exceptions.ConnectionError
+                    raise requests.exceptions.ConnectionError("Did not get status 200")
             except Exception as e:
                 self.logger.error(f"[XLSXManager] Error downloading Google Sheet, attempt {attempt}: {e}")
 
-    def get_all_customs_file_ids(self):
-        wb = load_workbook(self.OUTPUT_FILE, data_only=True)
+    def get_all_customs_file_ids_from_worksheet(self):
+        wb = openpyxl.load_workbook(self.OUTPUT_FILE, data_only=True)
         ws = wb['customs']
         
         file_ids = []
@@ -40,13 +39,14 @@ class XLSXManager:
 
     def get_file_ids_not_in_xlsx(self):
         try:
-            conn = sqlite3.connect(self.DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("SELECT file_id FROM customs")
-            db_file_ids = {row[0] for row in cursor.fetchall()}
-            conn.close()
+            # TODO database manager
+            # conn = sqlite3.connect(self.DB_FILE)
+            # cursor = conn.cursor()
+            # cursor.execute("SELECT file_id FROM customs")
+            # db_file_ids = {row[0] for row in cursor.fetchall()}
+            # conn.close()
 
-            new_file_ids = [fid for fid in db_file_ids if fid not in self.get_all_file_ids()]
+            new_file_ids = [file_id for file_id in all_customs_file_ids if file_id not in self.get_all_customs_file_ids_from_worksheet()]
             self.logger.info(f"[XLSXManager] Found {len(new_file_ids)} new file IDs.")
             return new_file_ids
         except Exception as e:
@@ -57,37 +57,35 @@ class XLSXManager:
     def is_full_band(song):
         return all(song[k] not in (None, -1) for k in ["diff_drums", "diff_guitar", "diff_bass", "diff_vocals"])
 
-    def update_wanted_from_sheets(self):
+    def update_wanted_from_worksheets(self):
         try:
-            # Load the workbook and select the sheets
             wb = load_workbook(self.OUTPUT_FILE, data_only=True)
             customs_sheet = wb["customs"]
             songs_sheet = wb["songs"]
 
-            # Connect to the database
-            conn = sqlite3.connect(self.DB_FILE)
-            cursor = conn.cursor()
+            # TODO database manager
+            # conn = sqlite3.connect(self.DB_FILE)
+            # cursor = conn.cursor()
 
-            # Update 'wanted' field for customs
             for row in customs_sheet.iter_rows(min_row=2):
                 file_id = row[4].value  # Column E (File ID)
                 wanted = row[0].value  # Column A (Wanted?)
 
-                if file_id and wanted is not None:
-                    cursor.execute("UPDATE customs SET wanted = ? WHERE file_id = ?", (bool(wanted), file_id))
+                # TODO database manager
+                # if file_id and wanted is not None:
+                #     cursor.execute("UPDATE customs SET wanted = ? WHERE file_id = ?", (bool(wanted), file_id))
 
-            # Update 'wanted' field for songs
             for row in songs_sheet.iter_rows(min_row=2):
                 title = row[1].value  # Column B (Song Name)
                 artist = row[2].value  # Column C (Song Artist)
                 wanted = row[0].value  # Column A (Wanted?)
+                
+                # TODO database manager
+                # if title and artist and wanted is not None:
+                #     cursor.execute("UPDATE songs SET wanted = ? WHERE title = ? AND artist = ?", (bool(wanted), title, artist))
 
-                if title and artist and wanted is not None:
-                    cursor.execute("UPDATE songs SET wanted = ? WHERE title = ? AND artist = ?", (bool(wanted), title, artist))
-
-            # Commit changes and close the connection
-            conn.commit()
-            conn.close()
+            # conn.commit()
+            # conn.close()
 
             self.logger.info("[XLSXManager] Updated 'wanted' field in the database from the sheets.")
         except Exception as e:
@@ -95,11 +93,12 @@ class XLSXManager:
 
     def export_customs(self):
         try:
-            conn = sqlite3.connect(self.DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("SELECT wanted, file_id, title, artist, diff_drums, diff_guitar, diff_bass, diff_vocals FROM customs")
-            rows = cursor.fetchall()
-            conn.close()
+            # TODO database manager
+            # conn = sqlite3.connect(self.DB_FILE)
+            # cursor = conn.cursor()
+            # cursor.execute("SELECT wanted, file_id, title, artist, diff_drums, diff_guitar, diff_bass, diff_vocals FROM customs")
+            # rows = cursor.fetchall()
+            # conn.close()
 
             workbook = xlsxwriter.Workbook(self.OUTPUT_FILE)
             worksheet = workbook.add_worksheet("customs")
@@ -122,9 +121,9 @@ class XLSXManager:
                 'border': 1,
                 'align': 'center',
                 'valign': 'vcenter',
-                'font_size': 20,          # Make the text huge
-                'bold': True,             # Optional: make the text bold to stand out more
-                'font_color': 'red'       # Optional: use a bright color like red
+                'font_size': 20,
+                'bold': True,             
+                'font_color': 'red'
             })
 
             headers = ["Wanted?", "Song Name", "Song Artist", "Full Band?", "File ID"]
@@ -134,7 +133,7 @@ class XLSXManager:
             worksheet.set_column('A:A', 10)
             worksheet.set_column('B:C', 40)
             worksheet.set_column('D:D', 12)
-            worksheet.set_column('E:E', 40)  # File ID can be long
+            worksheet.set_column('E:E', 40)
 
             worksheet.set_row(0,48)
 
@@ -172,11 +171,12 @@ class XLSXManager:
 
     def export_songs(self):
         try:
-            conn = sqlite3.connect(self.DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("SELECT wanted, title, artist FROM songs")
-            rows = cursor.fetchall()
-            conn.close()
+            # TODO database manager
+            # conn = sqlite3.connect(self.DB_FILE)
+            # cursor = conn.cursor()
+            # cursor.execute("SELECT wanted, title, artist FROM songs")
+            # rows = cursor.fetchall()
+            # conn.close()
             workbook = xlsxwriter.Workbook(self.OUTPUT_FILE)
             worksheet = workbook.add_worksheet("songs")
 
@@ -197,7 +197,6 @@ class XLSXManager:
             headers = ["Wanted?", "Song Name", "Song Artist"]
             worksheet.write_row(0, 0, headers, header_format)
 
-            # Set column widths (adjust as needed)
             worksheet.set_column('A:A', 10)
             worksheet.set_column('B:C', 40)
 

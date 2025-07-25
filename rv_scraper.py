@@ -1,5 +1,4 @@
 import requests
-import sqlite3
 import json
 import time
 import os
@@ -19,7 +18,6 @@ class RVScraper:
     }
     DATA_TEMPLATE = "sort%5B0%5D%5Bsort_by%5D=update_date&sort%5B0%5D%5Bsort_order%5D=DESC&data_type=full&page={page}&records=25"
     PROGRESS_FILE = "progress.json"
-    DB_FILE = "songs.db"
     DL_PATH = "downloads/customs/"
     LOCK = threading.Lock()
 
@@ -28,82 +26,86 @@ class RVScraper:
         self.load_progress()
         self.init_db()
 
-    # === Database ===
-    def init_db(self):
-        '''
-        Set up and connect to database
-        '''
-        try:
-            db_connection = sqlite3.connect(self.DB_FILE)
-            cursor = db_connection.cursor()
-            cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS customs (
-                        file_id TEXT PRIMARY KEY,
-                        artist TEXT,
-                        title TEXT,
-                        diff_drums INTEGER,
-                        diff_guitar INTEGER,
-                        diff_bass INTEGER,
-                        diff_vocals INTEGER,
-                        download_url TEXT,
-                        wanted BOOL NOT NULL,
-                        local_path TEXT
-                    )
-                """)
-            db_connection.commit()
-            db_connection.close()
-        except Exception as e:
-            self.logger.error(f"[RVScraper] Could not connect to database: {e}")
+    # TODO database manager
+    # def init_db(self):
+    #     '''
+    #     Set up and connect to database
+    #     '''
+    #     try:
+    #         db_connection = sqlite3.connect(self.DB_FILE)
+    #         cursor = db_connection.cursor()
+    #         cursor.execute("""
+    #                 CREATE TABLE IF NOT EXISTS customs (
+    #                     file_id TEXT PRIMARY KEY,
+    #                     artist TEXT,
+    #                     title TEXT,
+    #                     diff_drums INTEGER,
+    #                     diff_guitar INTEGER,
+    #                     diff_bass INTEGER,
+    #                     diff_vocals INTEGER,
+    #                     download_url TEXT,
+    #                     wanted BOOL NOT NULL,
+    #                     local_path TEXT
+    #                 )
+    #             """)
+    #         db_connection.commit()
+    #         db_connection.close()
+    #     except Exception as e:
+    #         self.logger.error(f"[RVScraper] Could not connect to database: {e}")
 
-    def save_to_db(self, songs):
-        '''
-        Write list of songs to database.
-        '''
-        try:
-            with self.LOCK:
-                db_connection = sqlite3.connect(self.DB_FILE)
-                cursor = db_connection.cursor()
-                for song in songs:
-                    try:
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO customs (
-                                file_id, artist, title, diff_drums, diff_guitar,
-                                diff_bass, diff_vocals, download_url, wanted
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            song["file_id"],
-                            song["artist"],
-                            song["title"],
-                            song["diff_drums"],
-                            song["diff_guitar"],
-                            song["diff_bass"],
-                            song["diff_vocals"],
-                            song["download_url"],
-                            False,
-                        ))
-                    except sqlite3.Error as e:
-                        self.logger.error(f"[RVScraper] SQLite error: {e}")
-                db_connection.commit()
-                db_connection.close()
-        except Exception as e:
-            self.logger.error(f"[RVScraper] Could not write songs to database: {e}")
+    # TODO database manager
+    # def save_to_db(self, songs):
+    #     '''
+    #     Write list of songs to database.
+    #     '''
+    #     try:
+    #         with self.LOCK:
+    #             db_connection = sqlite3.connect(self.DB_FILE)
+    #             cursor = db_connection.cursor()
+    #             for song in songs:
+    #                 try:
+    #                     cursor.execute("""
+    #                         INSERT OR REPLACE INTO customs (
+    #                             file_id, artist, title, diff_drums, diff_guitar,
+    #                             diff_bass, diff_vocals, download_url, wanted
+    #                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    #                     """, (
+    #                         song["file_id"],
+    #                         song["artist"],
+    #                         song["title"],
+    #                         song["diff_drums"],
+    #                         song["diff_guitar"],
+    #                         song["diff_bass"],
+    #                         song["diff_vocals"],
+    #                         song["download_url"],
+    #                         False,
+    #                     ))
+    #                 except sqlite3.Error as e:
+    #                     self.logger.error(f"[RVScraper] SQLite error: {e}")
+    #             db_connection.commit()
+    #             db_connection.close()
+    #     except Exception as e:
+    #         self.logger.error(f"[RVScraper] Could not write songs to database: {e}")
 
-    def file_ids_exist(self, file_ids):
-        '''
-        Check if file_ids exist in the DB.
-        '''
-        if not file_ids:
-            return set()
-        placeholders = ",".join("?" for _ in file_ids)
-        query = f"SELECT file_id FROM customs WHERE file_id IN ({placeholders})"
-        with sqlite3.connect(self.DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, file_ids)
-            rows = cursor.fetchall()
-        return set(row[0] for row in rows)
+    # TODO database manager
+    # def file_ids_exist(self, file_ids):
+    #     '''
+    #     Check if file_ids exist in the DB.
+    #     '''
+    #     if not file_ids:
+    #         return set()
+    #     placeholders = ",".join("?" for _ in file_ids)
+    #     query = f"SELECT file_id FROM customs WHERE file_id IN ({placeholders})"
+    #     with sqlite3.connect(self.DB_FILE) as conn:
+    #         cursor = conn.cursor()
+    #         cursor.execute(query, file_ids)
+    #         rows = cursor.fetchall()
+    #     return set(row[0] for row in rows)
 
-    # === Progress Saving ===
     def load_progress(self):
+        '''
+        In case operation was interupted, load progress
+        '''
         if os.path.exists(self.PROGRESS_FILE):
             with open(self.PROGRESS_FILE, "r") as f:
                 data = json.load(f)
@@ -112,7 +114,7 @@ class RVScraper:
 
     def save_progress(self):
         '''
-        Save scraper's progress
+        Save scraper's progress in case of sudden interuption
         '''
         with open(self.PROGRESS_FILE, "w") as f:
             json.dump({
@@ -120,7 +122,6 @@ class RVScraper:
                 "retry_pages": sorted(list(self.retry_pages))
             }, f, indent=2)
 
-    # === Communication ===
     def fetch_page(self, page, max_attempts=10):
         '''
         Try to fetch a page and retry on fail, return response
@@ -193,7 +194,8 @@ class RVScraper:
                 self.logger.info(f"[RVScraper] [Page {page}] All songs already in DB, stopping further scraping.")
                 return False  # signal to stop
 
-            self.save_to_db(songs)
+            # TODO database manager
+            #self.save_to_db(songs)
             self.logger.info(f"[RVScraper] [Page {page}] Saved {len(songs)} new songs.")
             return True  # success, continue scraping
         except Exception as e:

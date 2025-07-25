@@ -1,8 +1,1 @@
-FROM
-TO
-dta.config
-dta.log
-excluded.csv
-*.log
-*.xlsx
-*.db
+.venv

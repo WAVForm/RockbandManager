@@ -1,12 +1,11 @@
 import os
-import ftplib
-import time
-import shutil
+from ftplib import FTP
+from shutil import copy
 import logging
 
 class RBManager:
     '''
-    Manage processing of remote data
+    Manage transfering of data between data source and data processor
     '''
     def __init__(self):
         self.logger = logging.getLogger("RBManager")
@@ -17,336 +16,387 @@ class RBManager:
         self.emu_path = None
 
     def make_buffers(self):
+        '''
+        Creates the buffer directories where files will be stores after download for processing and before upload afterwards
+        '''
         try:
-            self.logger.info("Checking for FTP buffer directories...")
-            from_buffer_path = os.path.join(self.cwd, "FROM")
-            to_buffer_path = os.path.join(self.cwd, "TO")
-            if not os.path.exists(from_buffer_path):
-                self.logger.info("Making FROM directory.")
-                os.mkdir(from_buffer_path) #create the dir that will hold ftp downloads
-            if not os.path.exists(to_buffer_path):
-                self.logger.info("Making TO directory.")
-                os.mkdir(to_buffer_path) #create the dir that will hold ftp uploads
+            self.logger.info("Creating buffer directories...")
+            os.makedirs(os.path.join(self.cwd, "FROM"), exist_ok=True)
+            os.makedirs(os.path.join(self.cwd, "TO"), exist_ok=True)
         except Exception as e:
-            self.logger.debug(f"[RBManager] Error making buffers: {e}")
+            self.logger.debug(f"Error making buffers: {e}")
 
-    def get_dta_dirs(self,max_retries=5,retry_delay=5):
-        try:
-            if self.ps3_ip != None:
-                for attempt in range(max_retries):
-                    try:
-                        with ftplib.FTP(self.ps3_ip, encoding='latin-1') as ftp:
-                            self.logger.info("[RBManager] Connected to PS3, logging in and searching...")
-                            ftp.login()
-                            ftp.cwd("/dev_hdd0/game")
+    def get_dta_dirs(self):
+        '''
+        Looks for the directories containing .dta files
+        '''
+        #TODO add retry decorator
+        def ps3():
+            '''
+            Helper function to seperate PS3 logic
+            '''
+            def get_game_folders():
+                '''
+                Helper function to find game folders
+                '''
+                try:
+                    game_folders = []
+                    with FTP(self.ps3_ip, encoding="latin-1", timeout=60) as ftp:
+                        self.logger.info("Connected to PS3, logging in and finding game folders...")
+                        ftp.login()
+                        ftp.cwd("/dev_hdd0/game")
+                        for game_folder, t in ftp.mlsd():
+                            if game_folder == "." or game_folder == "..":
+                                continue
+                            elif t["type"] == "dir":
+                                game_folders.append(os.path.join("/dev_hdd0/game",game_folder))
+                    self.logger.info("Found game folders")
+                    return game_folders
+                except Exception as e:
+                    self.logger.error(f"Error finding game folders: {e}")
 
-                            game_folders = []
-                            try:
-                                for game_folder, t in ftp.mlsd():
-                                    if game_folder == "." or game_folder == '..':
-                                        continue
-                                    if t['type'] == 'dir':
-                                        game_folders.append(f"/dev_hdd0/game/"+game_folder)
-                            except Exception as e:
-                                self.logger.error(f"[RBManager] Error finding game folders: {e}")
-                                return False
-                            self.logger.info("[RBManager] Game folders found")
+            def get_usr_dirs(game_folders):
+                '''
+                Helper function to find 'USRDIR' folders
+                '''
+                try:
+                    usr_dirs = []
+                    with FTP(self.ps3_ip, encoding="latin-1", timeout=60) as ftp:
+                        self.logger.info("Connected to PS3, logging in and finding USRDIRs...")
+                        ftp.login()
+                        for game_folder in game_folders:
+                            ftp.cwd(self.to_ps3_dir(game_folder))
+                            for in_game_folder, t in ftp.mlsd():
+                                if in_game_folder == "USRDIR":
+                                    usr_dirs.append(os.path.join(game_folder, "USRDIR"))
+                            ftp.cwd("/")
+                    self.logger.info("Found game folders containig 'USRDIR'")
+                    return usr_dirs
+                except Exception as e:
+                    self.logger.error(f"Error finding USRDIRs: {e}")
+            
+            def get_song_folders(usr_dirs):
+                '''
+                Helper function to find song folders
+                '''
+                try:
+                    song_folders = []
+                    with FTP(self.ps3_ip, encoding="latin-1", timeout=60) as ftp:
+                        self.logger.info("Connected to PS3, logging in and finding song folders...")
+                        ftp.login()
+                        for usr_dir in usr_dirs:
+                            ftp.cwd(self.to_ps3_dir(usr_dir))
+                            for in_usr_dir,t in ftp.mlsd():
+                                if in_usr_dir == "." or in_usr_dir == "..":
+                                    continue
+                                if t["type"] == "dir" and in_usr_dir != "gen":
+                                    path = os.path.join(usr_dir, in_usr_dir)
+                                    ftp.cwd(self.to_ps3_dir(path))
+                                    for song_folder,t in ftp.mlsd():
+                                        if songs == "songs":
+                                            song_folders.append(os.path.join(usr_dir, in_usr_dir, "songs"))
+                                            ftp.cwd("/")
+                                            break
+                                ftp.cwd("/")
+                            ftp.cwd("/")                              
+                    self.logger.info("Found song folders")
+                    return usr_dirs
+                except Exception as e:
+                    self.logger.error(f"Error finding song folders: {e}")
 
-                            usrdirs = []
-                            try:
-                                for game_folder in gamefolders:
-                                    ftp.cwd(game_folder)
-                                    for in_game_folder,t in ftp.mlsd():
-                                        if in_game_folder == "USRDIR":
-                                            usrdirs.append(game_folder+"/USRDIR")
-                            except Exception as e:
-                                self.logger.error(f"[RBManager] error finding 'USRDIR': {e}")
-                                return False
-                            self.logger.info("[RBManager] Found game folders containing 'USRDIR'")
-
-                            song_folders = []
-                            try:
-                                for usrdir in usrdirs:
-                                    ftp.cwd(usrdir)
-                                    for subfolder,t in ftp.mlsd():
-                                        if subfolder == '.' or subfolder == '..':
-                                            continue
-                                        if t['type'] == 'dir' and subfolder != 'gen':
-                                            path = usrdir+"/"+subfolder
-                                            for songs,t in ftp.mlsd():
-                                                if songs == "songs":
-                                                    song_folders.append(usrdir+"/"+subfolder+"/songs")
-                            except Exception as e:
-                                self.logger.error(f"[RBManager] Error finding 'songs' folders: {e}")
-                                return False
-                            self.logger.info("[RBManager] Found game folders containing 'songs' folders")
-
-                            try:
-                                for song_folder in song_folders:
-                                    ftp.cwd(song_folder)
-                                    dtab_found = False
-                                    dta_found = False
-                                    for file, t in ftp.mlsd():
-                                        if t['type'] == 'file':
-                                            if file.endswith(".dtab"):
-                                                dtab_found = True
-                                                break
-                                            elif file.endswith(".dta"):
-                                                dta_found = True
-                                    if dtab_found:
-                                        self.dta_dirs[song_folder] = True
-                                    elif dta_found:
-                                        self.dta_dirs[song_folder] = False
-                            except Exception as e:
-                                self.logger.error(f"[RBManager] error finding .dtab/.dta file paths: {e}")
-                                return False
-                            self.logger.info("[RBManager] Found .dtab/.dta file paths")
-                            return True
-                    except ftplib.error_temp as e:
-                        self.logger.warning(f"[RBManager] PS3 FTP attempt {attempt + 1} failed with error: {e}")
-                        if attempt < max_retries - 1:
-                            self.logger.info(f"[RBManager] PS3 FTP retrying in {retry_delay} seconds...")
-                            time.sleep(retry_delay)
-                        else:
-                            self.logger.error("[RBManager] PS3 FTP max retries reached. Could not complete the operation.")
-                            return False
-            elif self.emu_path != None:
-                for attempt in range(max_retries):
-                    try:
-                        self.logger.info("[RBManager] Starting emulator directory scan...")
-                        base_path = os.path.join(self.emu_path, "dev_hdd0/game")
-                        game_folders = []
-                        try:
-                            for game_folder in os.listdir(base_path):
-                                full_path = os.path.join(base_path, game_folder)
-                                if os.path.isdir(full_path):
-                                    game_folders.append(full_path)
-                        except Exception as e:
-                            self.logger.error(f"[RBManager] Error finding game folders: {e}")
-                            return False
-
-                        self.logger.info("[RBManager] Game folders found")
-
-                        usrdirs = []
-                        try:
-                            for game_folder in game_folders:
-                                usrdir_path = os.path.join(game_folder, "USRDIR")
-                                if os.path.isdir(usrdir_path):
-                                    usrdirs.append(usrdir_path)
-                        except Exception as e:
-                            self.logger.error(f"[RBManager] Error finding 'USRDIR': {e}")
-                            return False
-
-                        self.logger.info("[RBManager] Found game folders containing 'USRDIR'")
-
-                        song_folders = []
-                        try:
-                            for usrdir in usrdirs:
-                                for subfolder in os.listdir(usrdir):
-                                    if subfolder == 'gen':
-                                        continue
-                                    subfolder_path = os.path.join(usrdir, subfolder)
-                                    if os.path.isdir(subfolder_path):
-                                        songs_path = os.path.join(subfolder_path, "songs")
-                                        if os.path.isdir(songs_path):
-                                            song_folders.append(songs_path)
-                        except Exception as e:
-                            self.logger.error(f"[RBManager] Error finding 'songs' folders: {e}")
-                            return False
-
-                        self.logger.info("[RBManager] Found game folders containing 'songs' folders")
-
-                        try:
-                            for song_folder in song_folders:
-                                dtab_found = False
-                                dta_found = False
-                                for file in os.listdir(song_folder):
+            def find_dta_files(song_folders):
+                '''
+                Helper function to find .dta files
+                '''
+                try:
+                    dta_dirs = {}
+                    with FTP(self.ps3_ip, encoding="latin-1", timeout=60) as ftp:
+                        self.logger.info("Connected to PS3, logging in and finding .dta files...")
+                        ftp.login()
+                        for song_folder in song_folders:
+                            ftp.cwd(self.to_ps3_dir(song_folder))
+                            dta_found = False
+                            dtab_found = False
+                            for file,t in ftp.mlsd():
+                                if t["type"] == "file":
                                     if file.endswith(".dtab"):
                                         dtab_found = True
                                         break
                                     elif file.endswith(".dta"):
                                         dta_found = True
-                                if dtab_found:
-                                    self.dta_dirs[os.path.relpath(song_folder, self.emu_path)] = True
-                                elif dta_found:
-                                    self.dta_dirs[os.path.relpath(song_folder, self.emu_path)] = False
-                        except Exception as e:
-                            self.logger.error(f"[RBManager] Error finding .dtab/.dta file paths: {e}")
-                            return False
+                                        break
+                            if dtab_found:
+                                dta_dirs[song_folder] = True
+                                ftp.cwd("/")
+                                break
+                            elif dta_found:
+                                dta_dirs[song_folder] = False
+                            ftp.cwd("/")
+                    self.logger.info("Found .dta files")
+                    return usr_dirs
+                except Exception as e:
+                    self.logger.error(f"Error finding .dta files: {e}")
 
-                        self.logger.info("[RBManager] Found .dtab/.dta file paths")
-                        return True
+            game_folders = get_game_folders()
+            usr_dirs = get_usr_dirs(game_folders)
+            song_folders = get_song_folders(usr_dirs)
+            return find_dta_files(song_folders)
 
-                    except Exception as e:
-                        self.logger.warning(f"[RBManager] PS3 Emulator scan attempt {attempt + 1} failed with error: {e}")
-                        if attempt < max_retries - 1:
-                            self.logger.info(f"[RBManager] PS3 Emulator scan retrying in {retry_delay} seconds...")
-                            time.sleep(retry_delay)
-                        else:
-                            self.logger.error("[RBManager] PS3 Emulator scan max retries reached. Could not complete the operation.")
-                            return False
-        except Exception as e:
-            self.logger.debug(f"[RBManager] Error getting .dta directories: {e}")
+        #TODO add retry decorator
+        def emu():
+            '''
+            Helper function to seperate emulator logic
+            '''
+            def get_game_folders():
+                '''
+                Helper function to find game folders
+                '''
+                self.logger.info("Looking for game folders...")
+                try:
+                    game_folders = []
+                    path = os.path.join(self.emu_path, "dev_hdd0/game")
+                    for game_folder in os.listdir(path):
+                        game_folders.append(os.path.join(path, game_folder))
+                    self.logger.info("Found game folders")
+                    return game_folders
+                except Exception as e:
+                    self.logger.error(f"Error finding game folders: {e}")
+
+            def get_usr_dirs(game_folders):
+                '''
+                Helper function to find game folders
+                '''
+                self.logger.info("Looking for 'USRDIR' folders...")
+                try:
+                    usr_dirs = []
+                    for game_folder in game_folders:
+                        path = os.path.join(game_folder, "USRDIR")
+                        if os.path.isdir(path):
+                            usr_dirs.append(path)
+                    self.logger.info("Found game folders containig 'USRDIR'")
+                    return usr_dirs
+                except Exception as e:
+                    self.logger.error(f"Error finding USRDIRs: {e}")
+            
+            def get_song_folders(usr_dirs):
+                '''
+                Helper function to find game folders
+                '''
+                self.logger.info("Looking for song folders...")
+                try:
+                    song_folders = []
+                    for usr_dir in usr_dirs:
+                        for in_usr_dir in os.listdir(usr_dir):
+                            if in_usr_dir == 'gen':
+                                continue
+                            songs_path = os.path.join(usr_dir, in_usr_dir, "songs")
+                            if os.path.isdir(songs_path):
+                                song_folders.append(songs_path)
+                    self.logger.info("Found song folders")
+                    return usr_dirs
+                except Exception as e:
+                    self.logger.error(f"Error finding song folders: {e}")
+
+            def find_dta_files(song_folders):
+                '''
+                Helper function to find .dta files
+                '''
+                self.logger.info("Looking for .dta files...")
+                try:
+                    dta_dirs = {}
+                    for song_folder in song_folders:
+                        dta_found = False
+                        dtab_found = False
+                        for file in os.listdir(song_folder):
+                            if file.endswith(".dtab"):
+                                dtab_found = True
+                                break
+                            elif file.endswith(".dta"):
+                                dta_found = True
+                        if dtab_found:
+                            dta_dirs[os.path.relpath(song_folder, self.emu_path)] = True
+                            break
+                        elif dta_found:
+                            dta_dirs[os.path.relpath(song_folder, self.emu_path)] = False
+                    self.logger.info("Found .dta files")
+                    return usr_dirs
+                except Exception as e:
+                    self.logger.error(f"Error finding .dta files: {e}")
     
+            game_folders = get_game_folders()
+            usr_dirs = get_usr_dirs(game_folders)
+            song_folders = get_song_folders(usr_dirs)
+            return find_dta_files(song_folders)
+            
+        self.logger.info("Getting .dta directories...")
+        try:
+            if self.ps3_ip != None:
+                self.dta_dirs = ps3()
+            elif self.emu_path != None:
+                self.dta_dirs = emu()
+            else:
+                raise ValueError("PS3 IP and Emulator path not defined")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error getting .dta dirs: {e}")
+            return False
+
     def download_dtas(self):
+        '''
+        Downloads/copies .dta files from target source
+        '''
+        def ps3():
+            '''
+            Helper function to seperate PS3 logic
+            '''
+            dtas = {}
+            with FTP(self.ps3_ip, encoding="latin-1", timeout=60) as ftp:
+                self.logger.info("Connected to PS3, logging in and downloading .dta/dtab...")
+                ftp.login()
+                for dir in self.dta_dirs.keys():
+                    ftp.cwd(self.to_ps3_dir(dir))
+                    downloaded_dta_path = os.path.join(self.cwd, "FROM", dir)
+                    if not os.path.exists(downloaded_dta_path):
+                        self.logger.info("Making dir for .dta download")
+                        os.makedirs(downloaded_dta_path)
+                    extension = "songs.dtab" if self.dta_dirs[dir] else "songs.dta"
+                    with open(os.path.join(downloaded_dta_path, "songs.dta"), "wb") as dta_f:
+                        ftp.retrbinary(f"RETR {extension}", dta_f.write)
+                        dtas[downloaded_dta_path] = ""
+                    ftp.cwd("/")
+            return dtas
+
+        def emu():
+            '''
+            Helper function to seperate emulator logic
+            '''
+            dtas = {}
+            self.logger.info("Copying .dta...")
+            for dir in self.dta_dirs.keys():
+                downloaded_dta_path = os.path.join(self.cwd, "FROM", dir)
+                emu_path = os.path.join(self.emu_path, dir)
+                os.makedirs(downloaded_dta_path, exist_ok=True)
+                extension = "songs.dtab" if os.path.exists(os.path.join(emu_path, "songs.dtab")) else "songs.dta"
+                copy(os.path.join(emu_path, extension), os.path.join(downloaded_dta_path, "songs.dta"))
+                dtas[downloaded_dta_path] = ""
+            return dtas
+
         try:
             dtas = {}
             if self.ps3_ip != None:
-                try:
-                    with ftplib.FTP(self.ps3_ip, encoding='latin-1') as ftp:
-                        self.logger.info("[RBManager] Connected to PS3, logging in and downloading .dta/dtab...")
-                        ftp.login()
-                        for dir in self.dta_dirs:
-                            ftp.cwd(dir)
-                            dl_path = os.path.join(self.cwd, "FROM", dir)
-                            if not os.path.exists(dl_path):
-                                os.makedirs(dl_path)
-                                self.logger.info("[RBManager] Downloading to "+ dl_path+"/songs.dtab")
-                                dta_f = open(dl_path+"/songs.dtab", "wb")
-                                ftp.retrbinary("RETR songs.dta", dta_f.write)
-                                dta_f.close()
-                            else:
-                                self.logger.info("[RBManager] " + dl_path +"/songs.dtab" + " already exists locally, delete and rerun to update")
-                            dtas[dl_path] = ""
-                            ftp.cwd("/")
-                        ftp.close()
-                except Exception as e:
-                    return False
+                dtas = ps3()
             elif self.emu_path != None:
-                try:
-                    for dir in self.dta_dirs.keys():
-                        full_path = os.path.join(self.cwd, "FROM", dir)
-                        emu_dl_path = os.path.join(self.emu_path, dir)
-                        if not os.path.exists(full_path):
-                            print("Path not exists:",full_path)
-                            os.makedirs(full_path)
-                            self.logger.info("[RBManager] Copying from " + emu_dl_path+"/songs.dtab" + " to "+ full_path)
-                            if(os.path.exists(emu_dl_path+"/songs.dtab")):
-                                shutil.copy(emu_dl_path+"/songs.dtab",self.to_win_dir(full_path+"/songs.dtab"))
-                            else:
-                                shutil.copy(emu_dl_path+"/songs.dta",self.to_win_dir(full_path+"/songs.dtab"))
-                        else:
-                            print("Path exists")
-                            self.logger.info("[RBManager] " + full_path + " already exists locally, delete and rerun to update")
-                        dtas[full_path] = "" #tell song manager where the dtas are, let it read the file
-                except Exception as e:
-                    return False
+                dtas = emu()
+            else:
+                raise ValueError("PS3 IP and Emulator path not defined")
             return (True, dtas)
         except Exception as e:
-            self.logger.debug(f"[RBManager] Error downloading .dtas: {e}")
-
-    def upload(self):
-        try:
-            if (self.ps3_ip != None):
-                with ftplib.FTP(self.ps3_ip, encoding='latin-1') as ftp:
-                    ftp.login()
-                    for dir in self.dta_dirs:
-                        path = os.path.join(self.cwd, "TO", dir)
-                        self.logger.info("Uploading .dta/.dtab at: "+ path +", to:" + (str)(dir))
-                        ftp.cwd(self.to_ps3_dir(dir))
-                        ftp.storbinary("STOR songs.dta", open(path+"/songs.dta"), 'rb')
-                        ftp.storbinary("STOR songs.dtab", open(path+"/songs.dtab"), 'rb')
-                        ftp.cwd("/")
-                    ftp.close()
-            else:
-                for dir in self.dta_dirs:
-                    path = os.path.join(self.cwd, "TO", dir)
-                    emu_up_path = os.path.join(self.emu_path, dir)
-                    self.logger.info("Copying .dta/.dtab at: "+ path +", to:" + emu_up_path)
-                    shutil.copy(path+"/songs.dta",emu_up_path+"/songs.dta")
-                    shutil.copy(path+"/songs.dtab",emu_up_path+"/songs.dtab")
-            return True
-        except Exception as e:
-            self.logger.debug(f"[RBManager] Error uploading .dtas: {e}")
+            self.logger.error(f"Error downloading .dtas: {e}")
             return False
 
-    def find_dtas_for_reupload(self, dir=None):
-        try:
-            paths = []
-            if dir == None:
-                dir = self.cwd
-            for root, dirs, files in os.walk(dir):
-                for file in files:
-                    if file.lower().endswith("dtab"):
-                        if "TO" in dir:
-                            continue
-                        paths.append(os.path.join(dir, "songs.dtab"))
-                        return paths
-                for file in files:
-                    if file.lower().endswith("dta"):
-                        if "TO" in dir:
-                            continue
-                        paths.append(os.path.join(dir, "songs.dtab"))
-                        return paths
-                
-                for each_dir in dirs:
-                    paths.extend(self.find_dtas_for_reupload(os.path.join(dir, each_dir)))
-                
-                return paths
-        except Exception as e:
-            self.logger.debug(f"[RBManager] Error finding .dtas for reupload: {e}")
-
-    def reuploaddtas(self):
-        try:
-            dtas = self.find_dtas_for_reupload()
-            if (self.ps3_ip != ""):
-                with ftplib.FTP(self.ps3_ip, encoding='latin-1') as ftp:
-                    ftp.login()
+    def upload(self):
+        '''
+        Uploads modified .dta files back to target source
+        '''
+        def ps3():
+            '''
+            Helper function to seperate PS3 logic
+            '''
+            with FTP(self.ps3_ip, encoding='latin-1', timeout=60) as ftp:
+                ftp.login()
+                for dir in self.dta_dirs.keys():
+                    path = os.path.join(self.cwd, "TO", dir)
+                    self.logger.info(f"Uploading .dta at {path}, to {dir}")
+                    ftp.cwd(self.to_ps3_dir(dir))
+                    with open(os.path.join(path, "songs.dta")) as dta_f:
+                        ftp.storbinary("STOR songs.dta", dta_f)
+                    with open(os.path.join(path, "songs.dtab")) as dtab_f:
+                        ftp.storbinary("STOR songs.dtab", dtab_f)
                     ftp.cwd("/")
-                    for dir in dtas:
-                        if(dir.endswith(".dtab")):
-                            self.logger.info("Uploading .dta at: "+ (str)(dir)+", back to:" + (str)(self.to_ps3_dir(dir.replace(self.cwd+"\\FROM",""))))
-                            path = self.to_ps3_dir(dir.replace(self.cwd+"\\FROM",""))
-                            path = path.replace("/songs.dtab", "")
-                            ftp.cwd(path)
-                            ftp.storbinary("STOR songs.dta", open(self.to_win_dir(dir), 'rb'))
-                        else:
-                            self.logger.info("Uploading .dta at: "+ (str)(dir)+", back to:" + (str)(self.to_ps3_dir(dir.replace(self.cwd+"\\FROM",""))))
-                            path = self.to_ps3_dir(dir.replace(self.cwd+"\\FROM",""))
-                            path = path.replace("/songs.dta", "")
-                            ftp.cwd(path)
-                            ftp.storbinary("STOR songs.dta", open(self.to_win_dir(dir), 'rb'))
-                        ftp.cwd("/")
-                    ftp.close()
+
+        def emu():
+            '''
+            Helper function to seperate emulator logic
+            '''
+            for dir in self.dta_dirs.keys():
+                path = os.path.join(self.cwd, "TO", dir)
+                emu_path = os.path.join(self.emu_path, dir)
+                self.logger.info(f"Copying .dta at {path}, to {emu_path}")
+                copy(os.path.join(path, "songs.dta"), os.path.join(emu_path, "songs.dta"))
+                copy(os.path.join(path, "songs.dtab"), os.path.join(emu_path, "songs.dtab"))
+
+        try:
+            if self.ps3_ip != None:
+                ps3()
+            elif self.emu_path != None:
+                emu()
             else:
-                for dir in self.dta_dirs:
-                    self.logger.info("Copying .dta/.dtab at: "+ (str)(self.cwd+"/FROM"+dir)+", to:" + (str)(dir))
-                    path = os.path.join(self.cwd, "FROM", dir)
-                    shutil.copy(path+"/songs.dtab", self.emu_path+"/"+dir+"/songs.dta")
-                    shutil.copy(path+"/songs.dtab", self.emu_path+"/"+dir+"/songs.dtab")
+                raise ValueError("PS3 IP and Emulator path not defined")
+            return True
         except Exception as e:
-            self.logger.debug(f"[RBManager] Error reuploading dtas: {e}")
+            self.logger.error(f"Error uploading .dtas: {e}")
+            return false
+
+    def restore_dtas(self):
+        '''
+        Reuploads available unmodified .dta files back to target source. Used in cases where reverting to a backup is needed (corruption, error, etc.) 
+        '''
+        def ps3():
+            '''
+            Helper function to seperate PS3 logic
+            '''
+            with FTP(self.ps3_ip, encoding='latin-1', timeout=60) as ftp:
+                ftp.login()
+                for dir in self.dta_dirs.keys():
+                    path = os.path.join(self.cwd, "FROM", dir, "songs.dta")
+                    if not os.path.exists(path):
+                        continue
+                    ftp.cwd(self.to_ps3_dir(dir))
+                    with open(path, 'rb') as dta_f:
+                        ftp.storbinary(f"STOR songs.dta", dta_f)
+                    ftp.cwd("/")            
+        
+        def emu():
+            '''
+            Helper function to seperate emulator logic
+            '''
+            for dir in self.dta_dirs.keys():
+                path = os.join(self.cwd, "FROM", dir, "songs.dta")
+                if not os.path.exists(path):
+                    continue
+                copy(path, os.path.join(self.emu_path, dir, "songs.dta"))
+        
+        try:
+            if self.ps3_ip != None:
+                ps3()
+            elif self.emu_path != None:
+                emu()
+            else:
+                raise ValueError("PS3 IP and Emulator path not defined")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error reuploading .dtas: {e}")
+            return False
 
     def to_ps3_dir(self, dir: str):
         '''Helper function for converting Windows path schema to PS3 schema'''
         return dir.replace('\\','/')
 
-    def to_win_dir(self, dir: str):
-        '''Helper function for converting PS3 path schema to Windows schema'''
-        return dir.replace('/', '\\')
-
     def get_ps3_connection(self):
         '''
         Attempts to get valid PS3 connection details from user
         '''
+        from ipaddress import ip_address
         try:
-            pattern = r"\b((?:\d{1,3}\.){3}\d{1,3})"
-            res = match(pattern, input("Please enter the IP and port (x.x.x.x:xxxxx)>: "))
-            if not res:
-                raise Exception()
-            ip, port = res.groups()
-            octets = list(map(int, ip.split('.')))
-            if any(o <0 or o > 255 for o in octets):
-                raise Exception()
-
-            with ftplib.FTP(ip, encoding='latin-1') as ftp:
-                self.logger.info("[RBManager] PS3 Connection Validated")
+            ip = ip_address(input("Please enter the IP of the PS3\n>: "))
+            with FTP(ip, encoding='latin-1', timeout=60) as ftp:
+                self.logger.info("PS3 Connection Validated")
                 self.ps3_ip = ip
             if self.ps3_ip is None:
-                raise Exception()
+                raise Exception("Connection could not be established with provided IP")
             return True
         except Exception as e:
-            self.logger.debug(f"[RBManager] Error getting PS3 connection: {e}")
+            self.logger.debug(f"Error getting PS3 connection: {e}")
             return False
 
     def get_emulator_path(self):
@@ -355,14 +405,9 @@ class RBManager:
         '''
         try:
             path = input("Please enter the root path to the emulator (i.e. the folder with 'dev_hdd0' in it)\n>: ")
-            # Check if the provided path exists and is a directory
-            if os.path.isdir(path):
-                # List all entries in the directory
-                entries = os.listdir(path)
-                # Check if 'dev_hdd0' is one of the entries
-                if 'dev_hdd0' in entries:
-                    self.emu_path = path
-                    return True
-            return False
+            if os.path.isdir(path) and 'dev_hdd0' in os.listdir(path):
+                self.emu_path = path
+                return True
         except Exception as e:
-            self.logger.debug(f"[RBManager] Error getting emulator path: {e}")
+            self.logger.debug(f"Error getting emulator path: {e}")
+            return False
