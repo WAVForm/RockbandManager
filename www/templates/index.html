@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rockband Editor</title>
+    <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rockband Editor</title>
+    <style>
+        :root {
+            --base-color: #334B3D;
+            --alt-color: #96BE99;
+            --shadow-color: #416450;
+            --image-bg: white;
+            --border-rad: 2em;
+            --section-distance: 5px;
+            --fade-time: 0.5s;
+            --navbar-height: 50px;
+            --menu-item-height: 50px;
+            --menu-underline-height: 5px;
+            --button-padding: 10px;
+            --button-spacing: 5px;
+            --dropdown-padding: 10px;
+            --dropdown-spacing: 10px;
+        }
+
+        html {
+            min-width: 350px;
+        }
+
+        body {
+            margin: 0px;
+            font-family: 'Courier New', sans-serif;
+            background-color: var(--base-color);
+            text-shadow: 1px 1px 0px var(--shadow-color);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 20px auto;
+            border-radius: var(--border-rad);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #96BE99, #334B3D);
+            color: white;
+            padding: var(--button-padding);
+            text-align: center;
+        }
+
+        .header h1 {
+            margin: 0px;
+            font-size: 2rem;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .tabs {
+            display: flex;
+            background: var(--alt-color);
+            border-top: solid var(--menu-underline-height) var(--shadow-color);
+        }
+
+        .tab {
+            flex: 1;
+            padding: var(--button-padding);
+            text-align: center;
+            background: var(--alt-color);
+            cursor: pointer;
+            font-size: 1.2rem;
+            color: var(--base-color);
+            transition: all 0.3s ease;
+            border-color: var(--base-color);
+            border-width: 1px;
+        }
+
+        .tab:hover {
+            background: #416450;
+            color: white;
+        }
+
+        .tab.active {
+            background-color: var(--base-color);
+            color: var(--alt-color);
+            border-bottom: solid var(--menu-underline-height) var(--base-color);
+        }
+
+        .content {
+            padding: 5px;
+            background-color: var(--alt-color);
+            height: calc(100vh - 200px);
+        }
+
+        .table-container {
+            overflow-y: scroll;
+            overflow-x: auto;
+            height: calc(100vh - 70px);
+            box-shadow: inset 0 4px 15px rgba(0, 0, 0, 0.75);
+        }
+
+        table {
+            width: 100%;
+            font-size: 1rem;
+            table-layout: fixed;
+        }
+
+        th {
+            background-color: var(--base-color);
+            color: var(--alt-color);
+            padding: var(--button-padding);
+            text-align: left;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        td {
+            padding: var(--button-padding);
+            border: 1px solid var(--base-color);
+        }
+
+        tr{
+            border-radius: 1em;
+        }
+
+        tr:hover {
+            background: var(--alt-color);
+        }
+
+        .wanted-checkbox {
+            width: 25px;
+            height: 25px;
+            cursor: pointer;
+            accent-color: var(--base-color);
+        }
+
+        .wanted-cell {
+            text-align: center;
+        }
+
+        .song-title, .song-artist {
+            max-width: 300px;
+            overflow: hidden;
+        }
+
+        .full-band-yes {
+            color: #28a745;
+        }
+
+        .full-band-no {
+            color: #dc3545;
+        }
+
+        .file-id {
+            font-family: 'Courier New', monospace;
+            background: var(--alt-color);
+            padding: 5px;
+            border-radius: 0.2em;
+        }
+
+        .actions {
+            margin-bottom: 5px;
+            display: flex;
+            gap: 5px;
+        }
+
+        .pending-counter{
+            padding: var(--button-padding);
+            border-radius: var(--border-rad);
+            text-transform: uppercase;
+            font-weight: bold;
+            transition: all 0.2s ease-out;
+            background-color: yellow;
+            color: black;
+            text-align: center;
+            margin-right: auto;
+        }
+
+        .btn {
+            padding: var(--button-padding);
+            border: none;
+            border-radius: var(--border-rad);
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            background-color: var(--base-color);
+            color: var(--alt-color);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(20px, 1fr));
+            gap: var(--section-distance);
+            margin-bottom: var(--section-distance);
+        }
+
+        .stat-card {
+            background-color: var(--base-color);
+            color: var(--alt-color);
+            padding: var(--button-padding);
+            border-radius: var(--border-rad);
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-number {
+            font-weight: bolder;
+        }
+
+        .loading {
+            text-align: center;
+            padding: var(--button-padding);
+            color: white;
+            background-color: #416450;
+        }
+
+        .error, .success {
+            padding: 15px;
+            border-radius: var(--border-rad);
+            margin-bottom: var(--section-distance);
+            text-align: center;
+        }
+
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-left: solid 5px #dc3545;
+        }
+
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border-left: solid 5px #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎵 Rockband Editor</h1>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('customs')">Custom Songs</button>
+            <button class="tab" onclick="switchTab('officials')">Official Songs</button>
+        </div>
+
+        <div class="content">
+            <div id="message-area" style="position: absolute;top: 10px;left: calc(50vw - 130px);"></div>
+            
+            <div class="actions">
+                <span id="pending-count" class="pending-counter" style="opacity: 0%;">0 pending changes</span>
+                <button class="btn" onclick="loadData()">🔄 Refresh Data</button>
+                <button class="btn" id="save-btn" onclick="saveChanges()">💾 Save Changes</button>
+            </div>
+
+            <div id="customs-content">
+                <div class="stats" id="customs-stats"></div>
+                <div class="table-container" id="customs-table-container">
+                    <table id="customs-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 60px;">Wanted</th>
+                                <th>Song Title</th>
+                                <th>Artist</th>
+                                <th style="width: 40px;">Full Band</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="officials-content" style="display: none;">
+                <div class="stats" id="officials-stats"></div>
+                <div class="table-container" id="officials-table-container">
+                    <table id="officials-table">
+                        <thead>
+                            <tr>
+                                <th>Wanted</th>
+                                <th>Song Title</th>
+                                <th>Artist</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="loading" class="loading" style="display: none;">
+                <h3>Loading data...</h3>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'customs';
+        let customsData = [];
+        let officialsData = [];
+        let pendingChanges = {"customs":[],"officials":[]};
+
+        function showMessage(message, type = 'info') {
+            const messageArea = document.getElementById('message-area');
+            const className = type === 'error' ? 'error' : 'success';
+            messageArea.innerHTML = `<div class="${className}">${message}</div>`;
+            setTimeout(() => {
+                messageArea.innerHTML = '';
+            }, 5000);
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab:nth-child(${tab === 'customs' ? 1 : 2})`).classList.add('active');
+            
+            // Show/hide content
+            document.getElementById('customs-content').style.display = tab === 'customs' ? 'block' : 'none';
+            document.getElementById('officials-content').style.display = tab === 'officials' ? 'block' : 'none';
+        }
+
+        function updatePendingChangesDisplay() {
+            const totalPending = pendingChanges.customs.length + pendingChanges.officials.length;
+            const pendingCounter = document.getElementById('pending-count');
+
+            if (totalPending > 0) {
+                pendingCounter.style.opacity = '100%';
+                pendingCounter.textContent = `${totalPending} pending change${totalPending > 1 ? 's' : ''}`;
+            } else {
+                pendingCounter.style.opacity = '0%';
+            }
+        }
+
+        function updateStats() {
+            // Update customs stats
+            const customsWanted = customsData.filter(song => song.wanted).length;
+            const customsTotal = customsData.length;
+            const customsFullBand = customsData.filter(song => 
+                song.diff_drums !== null && song.diff_drums !== -1 &&
+                song.diff_guitar !== null && song.diff_guitar !== -1 &&
+                song.diff_bass !== null && song.diff_bass !== -1 &&
+                song.diff_vocals !== null && song.diff_vocals !== -1
+            ).length;
+
+            document.getElementById('customs-stats').innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-number">${customsTotal}</div>
+                    <div class="stat-label">Total Customs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${customsWanted}</div>
+                    <div class="stat-label">Wanted Customs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${customsFullBand}</div>
+                    <div class="stat-label">Full Band Songs</div>
+                </div>
+            `;
+
+            // Update officials stats
+            const officialsWanted = officialsData.filter(song => song.wanted).length;
+            const officialsTotal = officialsData.length;
+
+            document.getElementById('officials-stats').innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-number">${officialsTotal}</div>
+                    <div class="stat-label">Total Officials</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${officialsWanted}</div>
+                    <div class="stat-label">Wanted Officials</div>
+                </div>
+            `;
+        }
+
+        function renderCustomsTable() {
+            const tbody = document.querySelector('#customs-table tbody');
+            tbody.innerHTML = '';
+
+            customsData.forEach((song, index) => {
+                const isFullBand = song.diff_drums !== null && song.diff_drums !== -1 &&
+                                 song.diff_guitar !== null && song.diff_guitar !== -1 &&
+                                 song.diff_bass !== null && song.diff_bass !== -1 &&
+                                 song.diff_vocals !== null && song.diff_vocals !== -1;
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="wanted-cell">
+                        <input type="checkbox" class="wanted-checkbox" 
+                               ${song.wanted ? 'checked' : ''} 
+                               onchange="updateWanted('customs', ${index}, this.checked)">
+                    </td>
+                    <td class="song-title" title="${song.title || ''}">${song.title || 'Unknown'}</td>
+                    <td class="song-artist" title="${song.artist || ''}">${song.artist || 'Unknown'}</td>
+                    <td class="${isFullBand ? 'full-band-yes' : 'full-band-no'}">
+                        ${isFullBand ? ' ✅ ' : ' ❌ '}
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function renderOfficialsTable() {
+            const tbody = document.querySelector('#officials-table tbody');
+            tbody.innerHTML = '';
+
+            officialsData.forEach((song, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="wanted-cell">
+                        <input type="checkbox" class="wanted-checkbox" 
+                               ${song.wanted ? 'checked' : ''} 
+                               onchange="updateWanted('officials', ${index}, this.checked)">
+                    </td>
+                    <td class="song-title" title="${song.title || ''}">${song.title || 'Unknown'}</td>
+                    <td class="song-artist" title="${song.artist || ''}">${song.artist || 'Unknown'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateWanted(table, index, wanted) {
+            if (table === 'customs') {
+                customsData[index].wanted = wanted;
+
+                const fileId = customsData[index].file_id;
+
+                const existsIndex = pendingChanges.customs.findIndex(change =>
+                    change.file_id === fileId
+                );
+
+                if (existsIndex !== -1) {
+                    // Remove existing entry
+                    pendingChanges.customs.splice(existsIndex, 1);
+                } else {
+                    // Add new entry
+                    pendingChanges.customs.push({
+                        file_id: fileId,
+                        wanted: customsData[index].wanted
+                    });
+                }
+
+            } else {
+                officialsData[index].wanted = wanted;
+
+                const title = officialsData[index].title;
+                const artist = officialsData[index].artist;
+
+                const existsIndex = pendingChanges.officials.findIndex(change =>
+                    change.title === title && change.artist === artist
+                );
+
+                if (existsIndex !== -1) {
+                    // Remove existing entry
+                    pendingChanges.officials.splice(existsIndex, 1);
+                } else {
+                    // Add new entry
+                    pendingChanges.officials.push({
+                        title: title,
+                        artist: artist,
+                        wanted: officialsData[index].wanted
+                    });
+                }
+            }
+
+            updateStats();
+            updatePendingChangesDisplay();
+        }
+
+
+
+        async function loadData() {
+            document.getElementById('customs-stats').innerHTML = '';
+            document.getElementById('officials-stats').innerHTML = '';
+            document.querySelector('#customs-table tbody').innerHTML = '';
+            document.querySelector('#officials-table tbody').innerHTML = '';
+            document.getElementById('loading').style.display = 'block';
+            
+            try {
+                await getCustomData();
+                await getOfficialData();
+                
+                renderCustomsTable();
+                renderOfficialsTable();
+
+                updateStats();
+                showMessage('Data loaded successfully!', 'success');
+            } catch (error) {
+                showMessage('Error loading data: ' + error.message, 'error');
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        async function getCustomData(){
+            const response = await fetch("/api/customs");
+    
+            if (!response.ok) {
+                throw new Error("Failed to fetch customs data");
+            }
+
+            const json = await response.json();
+            
+            customsData = json.data;     // array of customs
+        }
+
+        async function getOfficialData(){
+            const response = await fetch("/api/officials");
+    
+            if (!response.ok) {
+                throw new Error("Failed to fetch officials data");
+            }
+
+            const json = await response.json();
+            
+            officialsData = json.data;     // array of officials
+        }
+
+        async function saveChanges() {
+            if (pendingChanges.size === 0) {
+                showMessage('No changes to save.', 'info');
+                return;
+            }
+
+            const customs = pendingChanges.customs;
+            const officials = pendingChanges.officials;
+            console.log(customs);
+
+            try {
+                if (customs.length > 0) {
+                    await fetch('/api/customs/update', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ updates: customs }),
+                    });
+                }
+
+                if (officials.length > 0) {
+                    await fetch('/api/officials/update', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ updates: officials }),
+                    });
+                }
+
+                const totalChanges = customs.length + officials.length;
+                pendingChanges = {"customs":[],"officials":[]};
+                updatePendingChangesDisplay();
+                showMessage(`Successfully saved ${totalChanges} changes!`, 'success');
+            } catch (error) {
+                showMessage('Error saving changes: ' + error.message, 'error');
+            }
+        }
+
+        // Load data when page loads
+        window.addEventListener('load', loadData);
+    </script>
+</body>
+</html>

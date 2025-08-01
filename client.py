@@ -1,6 +1,7 @@
 import logging, logging.config
 from requests import get, post
 from ipaddress import ip_address
+from re import match
 
 from rb_manager import RBManager
 from song_manager import SongManager
@@ -18,7 +19,7 @@ if __name__ == "__main__":
             'file': {
                 'level': 'DEBUG',
                 'class': 'logging.FileHandler',
-                'filename': ' rbmanager.log',
+                'filename': 'client.log',
                 'formatter': 'default',
             },
             'stdout': {
@@ -99,22 +100,27 @@ if __name__ == "__main__":
 
         print("The next part requires the central server for whitelist information")
         try:
-            server_ip = ip_address(input("Please enter the central server's IP\n>: "))
+            pattern = r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})"
+            res = match(pattern, input("Please enter the IP and port (x.x.x.x:xxxxx)>: "))
+            if not res:
+                raise Exception()
+            server_ip, server_port = res.groups()
+            octets = list(map(int, server_ip.split('.')))
+            if any(o <0 or o > 255 for o in octets):
+                raise Exception("Octets out of range")
         except Exception as e:
-            logger.error("Failed on getting central server's IP")
-            continue
+            logger.error(f"Failed on getting central server's IP: {e}")
 
-        # TODO get and properly format whitelist as list of tuples [(artist, song_name)...]
-        # logger.info("Getting whitelist information from server")
-        # try:
-        #     response = requests.get("http://"+server_ip+"/whitelist")
-        #     if response.status_code == 204:
-        #         logger.warning("Server had no table 'song' in database")
-        #     else:   
-        #         song_manager.whitelist = response.json()
-        # except Exception as e:
-        #     logger.error(f"failed updating whitelist: {e}")
-        # logger.info("Succesfully updated whitelist")
+        logger.info("Getting whitelist information from server")
+        try:
+            response = get(f"http://{server_ip}:{server_port}/whitelist")
+            if response.status_code == 204:
+                logger.warning("Server had no table 'officials' in database")
+            else:
+                song_manager.whitelist = [(entry["artist"], entry["title"]) for entry in response.json()]
+        except Exception as e:
+            logger.error(f"failed updating whitelist: {e}")
+        logger.info("Succesfully updated whitelist")
 
         logger.info("Excluding songs by blacklist")
         if not song_manager.exclude_blacklisted():
@@ -125,15 +131,14 @@ if __name__ == "__main__":
         if user_input.lower()[0] == 'y':
             song_manager.manual_confirmation()
         
-        # TODO update database to mark any new excluded songs
-        # logger.info("Updating excluded songs on server")
-        # try:
-        #     response = requests.post("http://"+server_ip+"/songs", json=[{"title":song.name, "artist":song.artist, "excluded":song.excluded, "reason":song.reason} for song in song_manager.kept + song_manager.excluded])
-        #     if response.status_code != 200:
-        #         raise Exception(f"Server responded with '{response.status_code}|{response.content}'")
-        # except Exception as e:
-        #     logger.error(f"Failed to sending excluded songs to server: {e}")
-        # logger.info("Successfully updated excluded songs")
+        logger.info("Updating excluded songs on server")
+        try:
+            response = post(f"http://{server_ip}:{server_port}/songs", json=[{"title":song.name, "artist":song.artist, "wanted":(not song.excluded)} for song in song_manager.kept + song_manager.excluded])
+            if response.status_code != 200:
+                raise Exception(f"Server responded with '{response.status_code}|{response.content}'")
+        except Exception as e:
+            logger.error(f"Failed to sending excluded songs to server: {e}")
+        logger.info("Successfully updated excluded songs")
 
         logger.info("Finalizing new .dta files for upload")
         if not song_manager.finalize():

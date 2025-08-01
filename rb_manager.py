@@ -2,6 +2,7 @@ import os
 from ftplib import FTP
 from shutil import copy
 import logging
+from retry import retryable, RetryError
 
 class RBManager:
     '''
@@ -30,11 +31,11 @@ class RBManager:
         '''
         Looks for the directories containing .dta files
         '''
-        #TODO add retry decorator
         def ps3():
             '''
             Helper function to seperate PS3 logic
             '''
+            @retryable()
             def get_game_folders():
                 '''
                 Helper function to find game folders
@@ -53,8 +54,10 @@ class RBManager:
                     self.logger.info("Found game folders")
                     return game_folders
                 except Exception as e:
-                    self.logger.error(f"Error finding game folders: {e}")
-
+                    self.logger.error(f"Error finding game folders: {e}, retry...")
+                    raise RetryError(e)
+            
+            @retryable()
             def get_usr_dirs(game_folders):
                 '''
                 Helper function to find 'USRDIR' folders
@@ -73,8 +76,10 @@ class RBManager:
                     self.logger.info("Found game folders containig 'USRDIR'")
                     return usr_dirs
                 except Exception as e:
-                    self.logger.error(f"Error finding USRDIRs: {e}")
+                    self.logger.error(f"Error finding USRDIRs: {e}, retry...")
+                    raise RetryError(e)
             
+            @retryable()
             def get_song_folders(usr_dirs):
                 '''
                 Helper function to find song folders
@@ -100,10 +105,12 @@ class RBManager:
                                 ftp.cwd("/")
                             ftp.cwd("/")                              
                     self.logger.info("Found song folders")
-                    return usr_dirs
+                    return song_folders
                 except Exception as e:
-                    self.logger.error(f"Error finding song folders: {e}")
+                    self.logger.error(f"Error finding song folders: {e}, retry...")
+                    raise RetryError(e)
 
+            @retryable()
             def find_dta_files(song_folders):
                 '''
                 Helper function to find .dta files
@@ -133,20 +140,21 @@ class RBManager:
                                 dta_dirs[song_folder] = False
                             ftp.cwd("/")
                     self.logger.info("Found .dta files")
-                    return usr_dirs
+                    return dta_dirs
                 except Exception as e:
-                    self.logger.error(f"Error finding .dta files: {e}")
+                    self.logger.error(f"Error finding .dta files: {e}, retry...")
+                    raise RetryError(e)
 
             game_folders = get_game_folders()
             usr_dirs = get_usr_dirs(game_folders)
             song_folders = get_song_folders(usr_dirs)
             return find_dta_files(song_folders)
 
-        #TODO add retry decorator
         def emu():
             '''
             Helper function to seperate emulator logic
             '''
+            @retryable()
             def get_game_folders():
                 '''
                 Helper function to find game folders
@@ -160,8 +168,10 @@ class RBManager:
                     self.logger.info("Found game folders")
                     return game_folders
                 except Exception as e:
-                    self.logger.error(f"Error finding game folders: {e}")
-
+                    self.logger.error(f"Error finding game folders: {e}, retry...")
+                    raise RetryError(e)
+            
+            @retryable()
             def get_usr_dirs(game_folders):
                 '''
                 Helper function to find game folders
@@ -176,8 +186,10 @@ class RBManager:
                     self.logger.info("Found game folders containig 'USRDIR'")
                     return usr_dirs
                 except Exception as e:
-                    self.logger.error(f"Error finding USRDIRs: {e}")
+                    self.logger.error(f"Error finding USRDIRs: {e}, retry...")
+                    raise RetryError(e)
             
+            @retryable()
             def get_song_folders(usr_dirs):
                 '''
                 Helper function to find game folders
@@ -193,10 +205,12 @@ class RBManager:
                             if os.path.isdir(songs_path):
                                 song_folders.append(songs_path)
                     self.logger.info("Found song folders")
-                    return usr_dirs
+                    return song_folders
                 except Exception as e:
-                    self.logger.error(f"Error finding song folders: {e}")
+                    self.logger.error(f"Error finding song folders: {e}, retry...")
+                    raise RetryError(e)
 
+            @retryable()
             def find_dta_files(song_folders):
                 '''
                 Helper function to find .dta files
@@ -215,13 +229,14 @@ class RBManager:
                                 dta_found = True
                         if dtab_found:
                             dta_dirs[os.path.relpath(song_folder, self.emu_path)] = True
-                            break
+                            continue
                         elif dta_found:
                             dta_dirs[os.path.relpath(song_folder, self.emu_path)] = False
                     self.logger.info("Found .dta files")
-                    return usr_dirs
+                    return dta_dirs
                 except Exception as e:
-                    self.logger.error(f"Error finding .dta files: {e}")
+                    self.logger.error(f"Error finding .dta files: {e}, retry...")
+                    raise RetryError(e)
     
             game_folders = get_game_folders()
             usr_dirs = get_usr_dirs(game_folders)
@@ -245,41 +260,51 @@ class RBManager:
         '''
         Downloads/copies .dta files from target source
         '''
+        @retryable()
         def ps3():
             '''
             Helper function to seperate PS3 logic
             '''
-            dtas = {}
-            with FTP(self.ps3_ip, encoding="latin-1", timeout=60) as ftp:
-                self.logger.info("Connected to PS3, logging in and downloading .dta/dtab...")
-                ftp.login()
-                for dir in self.dta_dirs.keys():
-                    ftp.cwd(self.to_ps3_dir(dir))
-                    downloaded_dta_path = os.path.join(self.cwd, "FROM", dir)
-                    if not os.path.exists(downloaded_dta_path):
-                        self.logger.info("Making dir for .dta download")
-                        os.makedirs(downloaded_dta_path)
-                    extension = "songs.dtab" if self.dta_dirs[dir] else "songs.dta"
-                    with open(os.path.join(downloaded_dta_path, "songs.dta"), "wb") as dta_f:
-                        ftp.retrbinary(f"RETR {extension}", dta_f.write)
-                        dtas[downloaded_dta_path] = ""
-                    ftp.cwd("/")
-            return dtas
+            try:
+                dtas = {}
+                with FTP(self.ps3_ip, encoding="latin-1", timeout=60) as ftp:
+                    self.logger.info("Connected to PS3, logging in and downloading .dta/dtab...")
+                    ftp.login()
+                    for dir in self.dta_dirs.keys():
+                        ftp.cwd(self.to_ps3_dir(dir))
+                        downloaded_dta_path = os.path.join(self.cwd, "FROM", dir)
+                        if not os.path.exists(downloaded_dta_path):
+                            self.logger.info("Making dir for .dta download")
+                            os.makedirs(downloaded_dta_path)
+                        extension = "songs.dtab" if self.dta_dirs[dir] else "songs.dta"
+                        with open(os.path.join(downloaded_dta_path, "songs.dta"), "wb") as dta_f:
+                            ftp.retrbinary(f"RETR {extension}", dta_f.write)
+                            dtas[downloaded_dta_path] = ""
+                        ftp.cwd("/")
+                return dtas
+            except Exception as e:
+                self.logger.error(f"Error downloading .dtas: {e}, retry...")
+                raise RetryError(e)
 
+        @retryable()
         def emu():
             '''
             Helper function to seperate emulator logic
             '''
-            dtas = {}
-            self.logger.info("Copying .dta...")
-            for dir in self.dta_dirs.keys():
-                downloaded_dta_path = os.path.join(self.cwd, "FROM", dir)
-                emu_path = os.path.join(self.emu_path, dir)
-                os.makedirs(downloaded_dta_path, exist_ok=True)
-                extension = "songs.dtab" if os.path.exists(os.path.join(emu_path, "songs.dtab")) else "songs.dta"
-                copy(os.path.join(emu_path, extension), os.path.join(downloaded_dta_path, "songs.dta"))
-                dtas[downloaded_dta_path] = ""
-            return dtas
+            try:
+                dtas = {}
+                self.logger.info("Copying .dta...")
+                for dir in self.dta_dirs.keys():
+                    downloaded_dta_path = os.path.join(self.cwd, "FROM", dir)
+                    emu_path = os.path.join(self.emu_path, dir)
+                    os.makedirs(downloaded_dta_path, exist_ok=True)
+                    extension = "songs.dtab" if os.path.exists(os.path.join(emu_path, "songs.dtab")) else "songs.dta"
+                    copy(os.path.join(emu_path, extension), os.path.join(downloaded_dta_path, "songs.dta"))
+                    dtas[downloaded_dta_path] = ""
+                return dtas
+            except Exception as e:
+                self.logger.error(f"Error finding downloading .dtas: {e}, retry...")
+                raise RetryError(e)
 
         try:
             dtas = {}
@@ -298,32 +323,42 @@ class RBManager:
         '''
         Uploads modified .dta files back to target source
         '''
+        @retryable()
         def ps3():
             '''
             Helper function to seperate PS3 logic
             '''
-            with FTP(self.ps3_ip, encoding='latin-1', timeout=60) as ftp:
-                ftp.login()
-                for dir in self.dta_dirs.keys():
-                    path = os.path.join(self.cwd, "TO", dir)
-                    self.logger.info(f"Uploading .dta at {path}, to {dir}")
-                    ftp.cwd(self.to_ps3_dir(dir))
-                    with open(os.path.join(path, "songs.dta")) as dta_f:
-                        ftp.storbinary("STOR songs.dta", dta_f)
-                    with open(os.path.join(path, "songs.dtab")) as dtab_f:
-                        ftp.storbinary("STOR songs.dtab", dtab_f)
-                    ftp.cwd("/")
+            try:
+                with FTP(self.ps3_ip, encoding='latin-1', timeout=60) as ftp:
+                    ftp.login()
+                    for dir in self.dta_dirs.keys():
+                        path = os.path.join(self.cwd, "TO", dir)
+                        self.logger.info(f"Uploading .dta at {path}, to {dir}")
+                        ftp.cwd(self.to_ps3_dir(dir))
+                        with open(os.path.join(path, "songs.dta")) as dta_f:
+                            ftp.storbinary("STOR songs.dta", dta_f)
+                        with open(os.path.join(path, "songs.dtab")) as dtab_f:
+                            ftp.storbinary("STOR songs.dtab", dtab_f)
+                        ftp.cwd("/")
+            except Exception as e:
+                self.logger.error(f"Error uploading .dtas: {e}, retry...")
+                raise RetryError(e)
 
+        @retryable()
         def emu():
             '''
             Helper function to seperate emulator logic
             '''
-            for dir in self.dta_dirs.keys():
-                path = os.path.join(self.cwd, "TO", dir)
-                emu_path = os.path.join(self.emu_path, dir)
-                self.logger.info(f"Copying .dta at {path}, to {emu_path}")
-                copy(os.path.join(path, "songs.dta"), os.path.join(emu_path, "songs.dta"))
-                copy(os.path.join(path, "songs.dtab"), os.path.join(emu_path, "songs.dtab"))
+            try:
+                for dir in self.dta_dirs.keys():
+                    path = os.path.join(self.cwd, "TO", dir)
+                    emu_path = os.path.join(self.emu_path, dir)
+                    self.logger.info(f"Copying .dta at {path}, to {emu_path}")
+                    copy(os.path.join(path, "songs.dta"), os.path.join(emu_path, "songs.dta"))
+                    copy(os.path.join(path, "songs.dtab"), os.path.join(emu_path, "songs.dtab"))
+            except Exception as e:
+                self.logger.error(f"Error uploading .dtas: {e}, retry...")
+                raise RetryError(e)
 
         try:
             if self.ps3_ip != None:
@@ -341,30 +376,40 @@ class RBManager:
         '''
         Reuploads available unmodified .dta files back to target source. Used in cases where reverting to a backup is needed (corruption, error, etc.) 
         '''
+        @retryable()
         def ps3():
             '''
             Helper function to seperate PS3 logic
             '''
-            with FTP(self.ps3_ip, encoding='latin-1', timeout=60) as ftp:
-                ftp.login()
-                for dir in self.dta_dirs.keys():
-                    path = os.path.join(self.cwd, "FROM", dir, "songs.dta")
-                    if not os.path.exists(path):
-                        continue
-                    ftp.cwd(self.to_ps3_dir(dir))
-                    with open(path, 'rb') as dta_f:
-                        ftp.storbinary(f"STOR songs.dta", dta_f)
-                    ftp.cwd("/")            
+            try:
+                with FTP(self.ps3_ip, encoding='latin-1', timeout=60) as ftp:
+                    ftp.login()
+                    for dir in self.dta_dirs.keys():
+                        path = os.path.join(self.cwd, "FROM", dir, "songs.dta")
+                        if not os.path.exists(path):
+                            continue
+                        ftp.cwd(self.to_ps3_dir(dir))
+                        with open(path, 'rb') as dta_f:
+                            ftp.storbinary(f"STOR songs.dta", dta_f)
+                        ftp.cwd("/")
+            except Exception as e:
+                self.logger.error(f"Error restoring .dtas: {e}, retry...")
+                raise RetryError(e)            
         
+        @retryable()
         def emu():
             '''
             Helper function to seperate emulator logic
             '''
-            for dir in self.dta_dirs.keys():
-                path = os.join(self.cwd, "FROM", dir, "songs.dta")
-                if not os.path.exists(path):
-                    continue
-                copy(path, os.path.join(self.emu_path, dir, "songs.dta"))
+            try:
+                for dir in self.dta_dirs.keys():
+                    path = os.join(self.cwd, "FROM", dir, "songs.dta")
+                    if not os.path.exists(path):
+                        continue
+                    copy(path, os.path.join(self.emu_path, dir, "songs.dta"))
+            except Exception as e:
+                self.logger.error(f"Error restoring .dtas: {e}, retry...")
+                raise RetryError(e)
         
         try:
             if self.ps3_ip != None:
@@ -388,7 +433,15 @@ class RBManager:
         '''
         from ipaddress import ip_address
         try:
-            ip = ip_address(input("Please enter the IP of the PS3\n>: "))
+            pattern = r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})"
+            res = match(pattern, input("Please enter the IP and port (x.x.x.x:xxxxx)>: "))
+            if not res:
+                raise Exception()
+            ip, port = res.groups()
+            octets = list(map(int, ip.split('.')))
+            if any(o <0 or o > 255 for o in octets):
+                raise Exception()
+
             with FTP(ip, encoding='latin-1', timeout=60) as ftp:
                 self.logger.info("PS3 Connection Validated")
                 self.ps3_ip = ip

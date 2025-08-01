@@ -1,1 +1,7 @@
 .venv
+FROM
+TO
+DB
+*.log
+*.db
+**/__pycache__

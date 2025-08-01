@@ -8,8 +8,12 @@ import uvicorn
 import contextlib
 import datetime
 
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+
 from rv_scraper import RVScraper
 from xlsx_manager import XLSXManager
+from database_manager import DatabaseManager
 
 logging.config.dictConfig({
     'version': 1,
@@ -23,7 +27,7 @@ logging.config.dictConfig({
         'file': {
             'level': 'DEBUG',
             'class': 'logging.FileHandler',
-            'filename': 'rbmanager.log',
+            'filename': 'server.log',
             'formatter': 'default',
         },
         'stdout': {
@@ -56,8 +60,6 @@ logging.config.dictConfig({
     },
 })
 
-GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR4Dzf5x_5XHKEUa-hp9x6UV9AtFoKKUZPY9uVcZRNMEZl1yn6rBiTT6f6Zj3zdlUuIiOrmBdhZj20w/pub?output=xlsx'
-
 def get_time_until_midnight():
     now = datetime.datetime.now()
     tomorrow = datetime.datetime.combine(now.date() + datetime.timedelta(days=1), datetime.datetime.min.time())
@@ -65,71 +67,31 @@ def get_time_until_midnight():
 
 def run_rv_scraper():
     rv_scraper = RVScraper()
-    rv_scraper.populate_db()
-
-# TODO rvscraper
-#def download_and_prepare_wanted_customs():
-    # TODO database manager
-    # conn = sqlite3.connect("songs.db")
-    # cursor = conn.cursor()
-    # cursor.execute("SELECT file_id, download_url FROM customs WHERE wanted=1 AND local_path IS NULL")
-    # wanted = cursor.fetchall()
-    # conn.close()
-
-    for file_id, url in wanted:
-        path = download_and_process(url)
-        update_path_in_db(file_id, path)
-
-def update_xlsx():
-    xlsx_manager = XLSXManager(GOOGLE_SHEET_URL)
-    xlsx_manager.download_google_sheet_xlsx()
-    xlsx_manager.update_wanted_from_sheets()
-    xlsx_manager.export_songs()
-    xlsx_manager.export_customs()
-
+    rv_scraper.scrape()
+    rv_scraper.prepare_customs()
 
 async def daily_update():
     while True:
         try:
             run_rv_scraper()
-            download_and_prepare_wanted_customs()
-            update_xlsx()
             logger.info("Daily update complete. Sleeping until midnight...")
         except Exception as e:
             logger.error(f"Error during daily update: {e}")
         
         await asyncio.sleep(get_time_until_midnight())        
 
-# TODO rvscraper what is not database manager
-# def download_and_process(url):
-#     response = requests.get(url)
-#     if response.status_code != 200:
-#         logger.error(f"Failed to download file from {url}")
-#         return None
+from typing import List, Dict, Any
+from pydantic import BaseModel
 
-#     os.makedirs("customs_downloads", exist_ok=True)
+class CustomsUpdateRequest(BaseModel):
+    updates: List[Dict[str, Any]]
 
-#     # Save the file
-#     file_path = os.path.join("customs_downloads", os.path.basename(url))
-#     with open(file_path, 'wb') as f:
-#         f.write(response.content)
-
-#     # TODO convert to .pkg
-
-#     return file_path
-
-# def update_path_in_db(file_id, path):
-#     pass
-#     # TODO database manager
-#     # conn = sqlite3.connect("songs.db")
-#     # cursor = conn.cursor()
-#     # cursor.execute("UPDATE songs SET local_path=? WHERE file_id=?", (path, file_id))
-#     # conn.commit()
-#     # conn.close()
-
+class OfficialsUpdateRequest(BaseModel):
+    updates: List[Dict[str, Any]]
 
 if __name__ == "__main__":
     logger = logging.getLogger("Server")
+    templates = Jinja2Templates(directory="www/templates")
 
     @contextlib.asynccontextmanager
     async def lifespan(app: fastapi.FastAPI):
@@ -145,78 +107,98 @@ if __name__ == "__main__":
 
     app = fastapi.FastAPI(lifespan=lifespan)
 
+    @app.get("/")
+    async def read_root(request: fastapi.Request):
+        """Main page with database editor interface"""
+        try:         
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+            })
+        except Exception as e:
+            logger.error(f"Error loading main page: {e}")
+            return fastapi.responses.JSONResponse({"error":"Error loading main page"}, status_code=400)
+
+    @app.get("/api/customs")
+    async def get_customs():
+        """Get all customs data as JSON"""
+        try:
+            db_m = DatabaseManager()
+            customs_data = db_m.get_all_fields("customs")
+            return {
+                "data":customs_data
+            }
+        except Exception as e:
+            logger.error(f"Error getting customs: {e}")
+            raise fastapi.responses.JSONResponse({"error":"Error getting customs"}, status_code=400)
+
+    @app.get("/api/officials")
+    async def get_officials():
+        """Get all officials data as JSON"""
+        try:
+            db_m = DatabaseManager()
+            officials_data = db_m.get_all_fields("officials")
+            return {
+                "data":officials_data
+            }
+        except Exception as e:
+            logger.error(f"Error getting officials: {e}")
+            raise fastapi.responses.JSONResponse({"error":"Error getting officials"}, status_code=400)
+
+    @app.post("/api/customs/update")
+    async def update_customs(request: fastapi.Request):
+        """Update wanted status for customs songs"""
+        try:
+            data = await request.json()
+            if "updates" not in data:
+                raise ValueError("Request does not have 'update'")
+            db_m = DatabaseManager()
+            db_m.update_wanted(data["updates"], target_table="customs")
+            return {"success": True, "message": f"Updated {len(data["updates"])} customs songs"}
+        except Exception as e:
+            logger.error(f"Error updating customs: {e}")
+            return fastapi.responses.JSONResponse({"error":f"Error updating customs: {e}"},status_code=400)
+
+    @app.post("/api/officials/update")
+    async def update_officials(request: fastapi.Request):
+        """Update wanted status for officials songs"""
+        try:
+            data = await request.json()
+            if "updates" not in data:
+                raise ValueError("Request does not have 'update'")
+            db_m = DatabaseManager()
+            db_m.update_wanted(data["updates"], target_table="officials")
+            return {"success": True, "message": f"Updated {len(data["updates"])} officials songs"}
+        except Exception as e:
+            logger.error(f"Error updating officials: {e}")
+            return fastapi.responses.JSONResponse({"error":f"Error updating officials: {e}"},status_code=400)
+
     @app.get("/whitelist")
     def get_whitelist(response: fastapi.Response):
         try:
-            # TODO database manager
-            # conn = sqlite3.connect("songs.db")
-            # cursor = conn.cursor()
-            # cursor.execute("SELECT artist, title FROM songs WHERE excluded = 0")
-            # res = cursor.fetchall()
-            if len(rows) == 0:
-                response.status_code = 204
-                return []
-            songs = [(row[0],row[1]) for row in rows]
-            return songs
+            db_m = DatabaseManager()
+            return db_m.get_wanted_official_songs()
         except Exception as e:
             logger.error(f"[Server] Error getting whitelist: {e}")
             response.status_code = 400
-            return []
+            return "Error"
 
     @app.post("/songs")
-    async def update_whitelist(request: fastapi.Request, response: fastapi.Response):
+    async def update_officials(request: fastapi.Request, response: fastapi.Response):
         try:
+            logger.debug("Updating 'officials' table in DB")
+            logger.debug("Getting json from request")
             songs = await request.json()
+            logger.debug("Checking if songs is list")
             if not isinstance(songs, list):
                 raise ValueError("Expected list of songs")
-
-            # TODO database manager
-            # conn = sqlite3.connect("songs.db")
-            # cursor = conn.cursor()
-            # cursor.execute('''
-            # CREATE TABLE IF NOT EXISTS songs (
-            #     id INTEGER PRIMARY KEY AUTOINCREMENT,
-            #     title TEXT NOT NULL,
-            #     artist TEXT NOT NULL,
-            #     excluded BOOLEAN NOT NULL,
-            #     reason TEXT,
-            #     UNIQUE(title, artist)
-            # )
-            # ''')
-
-            for song in songs:
-                if not isinstance(song, dict):
-                    raise ValueError("Expected song to be a dictionary")
-                if 'title' not in song or 'artist' not in song:
-                    raise ValueError("Song must have a title and artist at minimum")
-                title = song["title"]
-                artist = song["artist"]
-                if len(title) > 500 or len(artist) > 500:
-                    raise ValueError("Title and artist must be under 500 characters")
-                excluded = song.get("excluded", False)
-                reason = song.get("reason", "")
-
-                # TODO check if song in database, if so only update if excluded is different. If not in database then add
-
-                # TODO database manager
-                # cursor.execute('''
-                # INSERT INTO songs (title, artist, excluded, reason)
-                # VALUES (?, ?, ?, ?)
-                # ON CONFLICT(title, artist) DO UPDATE SET
-                #     excluded=excluded,
-                #     reason=excluded
-                # ''', (title, artist, excluded, reason))
-
-            # conn.commit()
-            # conn.close()
+            logger.debug("Firing up DatabaseManager")
+            db_m = DatabaseManager()
+            logger.debug("Saving songs to 'officials'")
+            db_m.save_songs(songs, "officials")                
             return "OK"
         except Exception as e:
+            logger.error(f"Error during updating db: {e}")
             response.status_code = 400
             return f"[Server] Error updating whitelist: {e}"
-
-    # Add an endpoint to download the latest XLSX
-    @app.get("/xlsx")
-    async def get_latest_xlsx():
-        return fastapi.responses.FileResponse(XLSXManager(GOOGLE_SHEET_URL).OUTPUT_FILE)
 
     uvicorn.run(app, host="0.0.0.0", port=8000)

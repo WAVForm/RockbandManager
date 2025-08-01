@@ -3,6 +3,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from shutil import copy
 from webbrowser import open as web_open
+from retry import retryable, RetryError
 
 from dta_processor import DTAProcessor
 
@@ -15,14 +16,13 @@ class Song:
         self.artist = "" #artist of song
         self.content = [] #song data from DTA as nested list
         self.excluded = False #should the song be excluded
-        self.reason = ""
 
     def __eq__(self, other:'Song')->bool:
         return (self.name == other.name) and (self.artist == other.artist)
     def __hash__(self)->int:
         return hash((self.name, self.artist))
     def __str__(self)->str:
-        return (f"|{self.name} by {self.artist}|{f"Excluded because {self.reason}" if self.excluded else ""}")
+        return (f"|{self.name} by {self.artist}|{f"Excluded" if self.excluded else ""}")
 
 class SongManager:
     '''
@@ -39,15 +39,16 @@ class SongManager:
         '''
         Open each .dta that was downloaded and process it
         '''
+        @retryable()
         def process_dta(file_path):
             '''
             Helper function that sends .dta to be processed and return list of songs.
             '''
-            self.logger.debug(f"Processing .dta file at {file_path}")
             try:
+                self.logger.debug(f"Processing .dta file at {file_path}")
                 processor = DTAProcessor()
                 song_list = []
-                with open(file_path, 'r') as dta_f:
+                with open(os.path.join(file_path, "songs.dta"), 'r') as dta_f:
                     nested = processor.dta_to_nested_list(dta_f.read())
                 self.logger.debug(f"Got back a nested list from {file_path}, extracting songs")
                 for each in nested:
@@ -60,15 +61,15 @@ class SongManager:
                     if not isinstance(each[2][1], str):
                         self.logger.debug(f"{str(each[2][1])} processed as {type(each[2][1])}")
                     s = Song()
-                    s.name = each[1][1] if each[1][0] == "name" else ""
-                    s.artist = each[2][1] if each[2][0] == "artist" else ""
+                    s.name = each[1][1].strip('"') if each[1][0] == "name" else ""
+                    s.artist = each[2][1].strip('"') if each[2][0] == "artist" else ""
                     s.content = each
                     song_list.append(s)
                 self.songs[file_path] = song_list
                 return True
             except Exception as e:
-                self.logger.debug(f"Error processing .dta: {e}")
-                return False
+                self.logger.debug(f"Error processing .dta: {e}, retry...")
+                raise RetryError(e)
                 
         self.logger.info("Processing downloaded .dtas")
         try:
@@ -88,7 +89,8 @@ class SongManager:
         '''
         Excludes not wanted songs
         '''
-        def process_exclusion(self, songs):
+        @retryable()
+        def process_exclusion(songs):
             '''
             Helper function to make exclusion multithreaded
             '''
@@ -96,16 +98,17 @@ class SongManager:
                 for song in songs:
                     if (song.artist, song.name) in self.whitelist:
                         self.logger.debug(f"Whitelisted {song}")
+                        song.excluded = False
                         self.kept.append(song)
                     else:
                         self.logger.debug(f"Excluded {song}")
-                        song.reason = "Whitelist Exclusion"
+                        song.excluded = True
                         self.excluded.append(song)
                 self.logger.debug(f"Finished processing exclusion of {len(songs)} songs")
                 return True
             except Exception as e:
                 self.logger.debug(f"Error processing exclusion: {e}")
-                return False
+                raise RetryError(e)
 
         try:
             self.logger.info("Excluding blacklisted songs")
@@ -115,9 +118,10 @@ class SongManager:
                     if not future.result():
                         raise Exception("Failed excluding a set of songs")
             self.logger.info(f"{len(self.excluded)} total songs excluded")
-            return not failed
+            return True
         except Exception as e:
             self.logger.debug(f"Error during automatic exclusion: {e}")
+            return False
 
     def manual_confirmation(self):
         '''
@@ -141,6 +145,8 @@ class SongManager:
                         return 0 #not wanted
                     case 'c':
                         return 1 #wanted
+                    case _:
+                        pass
 
         self.logger.info("Starting manual confirmation of excluded songs...")
         try:
@@ -176,6 +182,7 @@ class SongManager:
         Finalize changes and create the files
         '''
         modified_dtas = {}#temporary dictionary, key is path value is modifed contents
+        @retryable()
         def create_modified_dta(dir):
             '''
             Helper function to create modified .dta file strings before writing them
@@ -192,24 +199,25 @@ class SongManager:
                 return True
             except Exception as e:
                 self.logger.debug(f"Error creating modified .dta strings from {dir}: {e}")
-                return False
+                raise RetryError(e)
 
+        @retryable()
         def write_modified_dta(dir):
             '''
             Helper function to write modified .dta file string
             '''
             try:
                 destination_path = dir.replace("FROM", "TO")
-                os.makedirs(destination, exist_ok=True) #make path if doesn't exist
+                os.makedirs(destination_path, exist_ok=True) #make path if doesn't exist
                 copy(os.path.join(dir, "songs.dta"), os.path.join(destination_path, "songs.dtab")) #create backup .dta
                 self.logger.debug(f"Writing modified content to {destination_path}")
-                with open(os.path.join(destination, "songs.dta"), "w") as dta_f: #make the dta
+                with open(os.path.join(destination_path, "songs.dta"), "w") as dta_f: #make the dta
                     dta_f.write(modified_dtas[dir])
                 self.logger.debug(f"Done writing to {destination_path}")
                 return True
             except Exception as e:
                 self.logger.debug(f"Error writing modified .dta originally from {dir}: {e}")
-                return False
+                raise RetryError(e)
 
         self.logger.info("finalizing .dta files to send back")
         try:
