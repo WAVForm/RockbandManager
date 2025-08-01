@@ -7,12 +7,12 @@ import fastapi
 import uvicorn
 import contextlib
 import datetime
+import uuid
 
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
 from rv_scraper import RVScraper
-from xlsx_manager import XLSXManager
 from database_manager import DatabaseManager
 
 logging.config.dictConfig({
@@ -75,6 +75,7 @@ async def daily_update():
         try:
             run_rv_scraper()
             logger.info("Daily update complete. Sleeping until midnight...")
+            print(f"The secret code is: {secret_code}")
         except Exception as e:
             logger.error(f"Error during daily update: {e}")
         
@@ -92,6 +93,15 @@ class OfficialsUpdateRequest(BaseModel):
 if __name__ == "__main__":
     logger = logging.getLogger("Server")
     templates = Jinja2Templates(directory="www/templates")
+    
+    def create_secret_code():
+        secret_code = uuid.uuid4().hex
+        with open("www/secret_code.txt", 'w') as code_f:
+            code_f.write(secret_code)
+        print(f"The secret code is: {secret_code}")
+        return secret_code
+
+    secret_code = create_secret_code()
 
     @contextlib.asynccontextmanager
     async def lifespan(app: fastapi.FastAPI):
@@ -108,15 +118,29 @@ if __name__ == "__main__":
     app = fastapi.FastAPI(lifespan=lifespan)
 
     @app.get("/")
-    async def read_root(request: fastapi.Request):
+    async def read_root(request: fastapi.Request, code):
         """Main page with database editor interface"""
-        try:         
+        try:
+            if code != secret_code:
+                print(f"{code} != {secret_code}")
+                raise Exception()
             return templates.TemplateResponse("index.html", {
                 "request": request,
             })
         except Exception as e:
             logger.error(f"Error loading main page: {e}")
             return fastapi.responses.JSONResponse({"error":"Error loading main page"}, status_code=400)
+
+    @app.get("/change_code")
+    async def change_code(code):
+        try:
+            if code != secret_code:
+                raise Exception()
+            secret_code = uuid.uuid4().hex
+        except Exception as e:
+            logger.error(f"Error")
+            return fastapi.responses.JSONResponse({"error":"Error"}, status_code=400)
+
 
     @app.get("/api/customs")
     async def get_customs():
