@@ -1,5 +1,5 @@
 import logging
-import os.path as osp
+import os
 
 logger = logging.getLogger("RBManager")
 
@@ -10,9 +10,9 @@ def get_game_folders(emu_path, root_game_path):
     logger.info("Looking for game folders...")
     try:
         game_folders = []
-        path = osp.join(emu_path, root_game_path)
+        path = os.path.join(emu_path, root_game_path)
         for game_folder in os.listdir(path):
-            game_folders.append(osp.join(path, game_folder))
+            game_folders.append(os.path.join(path, game_folder))
         logger.info("Found game folders")
         return game_folders
     except Exception as e:
@@ -27,8 +27,8 @@ def get_usr_dirs(game_folders):
     try:
         usr_dirs = []
         for game_folder in game_folders:
-            path = osp.join(game_folder, "USRDIR")
-            if osp.isdir(path):
+            path = os.path.join(game_folder, "USRDIR")
+            if os.path.isdir(path):
                 usr_dirs.append(path)
         logger.info("Found game folders containig 'USRDIR'")
         return usr_dirs
@@ -47,8 +47,8 @@ def get_song_folders(usr_dirs):
             for in_usr_dir in os.listdir(usr_dir):
                 if in_usr_dir == 'gen':
                     continue
-                songs_path = osp.join(usr_dir, in_usr_dir, "songs")
-                if osp.isdir(songs_path):
+                songs_path = os.path.join(usr_dir, in_usr_dir, "songs")
+                if os.path.isdir(songs_path):
                     song_folders.append(songs_path)
         logger.info("Found song folders")
         return song_folders
@@ -76,10 +76,10 @@ def find_dta_files(song_folders):
                 dta_dirs[song_folder] = True
             elif dta_found:
                 dta_dirs[song_folder] = False
-        self.logger.info("Found .dta files")
+        logger.info("Found .dta files")
         return dta_dirs
     except Exception as e:
-        self.logger.error(f"Error finding .dta files: {e}")
+        logger.error(f"Error finding .dta files: {e}")
         raise
 
 def run(emu_path:str, root_game_path:str="dev_hdd0/game"):

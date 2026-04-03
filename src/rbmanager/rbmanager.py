@@ -3,8 +3,8 @@ from ftplib import FTP
 from shutil import copy
 import logging
 from retry import retryable, RetryError
-import ps3_logic as ps3
-import emu_logic as emu
+from ps3_logic import download_dtas, get_dta_dirs, restore_dtas, upload_dtas
+from re import match
 
 class RBManager:
     '''
@@ -15,7 +15,6 @@ class RBManager:
         self.cwd = os.path.abspath(os.path.join(os.path.realpath(__file__), os.pardir)) #keep track of the CWD
         self.remote_dta_dirs = {} #dirs containing .dta/.dtabs on PS3, path is key, value is true if dtab is found, false otherwise 
         self.ps3_ip = None
-        self.emu_path = None
 
     def get_dta_dirs(self):
         '''
@@ -24,11 +23,9 @@ class RBManager:
         self.logger.info("Getting .dta directories...")
         try:
             if self.ps3_ip != None:
-                self.dta_dirs = ps3.get_dta_dirs.run(ps3_ip=, root_game_path=)
-            elif self.emu_path != None:
-                self.dta_dirs = emu.get_dta_dirs.run(emu_path=, root_game_path=)
+                self.dta_dirs = get_dta_dirs.run(ps3_ip=self.ps3_ip, root_game_path=)
             else:
-                raise ValueError("PS3 IP and Emulator path not defined")
+                raise ValueError("PS3 IP not defined")
         except Exception as e:
             self.logger.error(f"Error getting .dta dirs: {e}")
             raise
@@ -39,11 +36,9 @@ class RBManager:
         '''
         try:
             if self.ps3_ip != None:
-                ps3.download_dtas.run(ps3_ip=, dl_cache_path=, dta_dirs=)
-            elif self.emu_path != None:
-                emu.download_dtas.run(ps3_ip=, dl_cache_path=, dta_dirs=)
+                download_dtas.run(ps3_ip=self.ps3_ip, dl_cache_path=, dta_dirs=)
             else:
-                raise ValueError("PS3 IP and Emulator path not defined")
+                raise ValueError("PS3 IP not defined")
         except Exception as e:
             self.logger.error(f"Error downloading .dtas: {e}")
             raise
@@ -54,11 +49,9 @@ class RBManager:
         '''
         try:
             if self.ps3_ip != None:
-                ps3.upload_dtas.run(ps3_ip=, ul_cache_path=, dta_dirs=)
-            elif self.emu_path != None:
-                emu.upload_dtas.run(ps3_ip=, ul_cache_path=, dta_dirs=)
+                upload_dtas.run(ps3_ip=self.ps3_ip, ul_cache_path=, dta_dirs=)
             else:
-                raise ValueError("PS3 IP and Emulator path not defined")
+                raise ValueError("PS3 IP not defined")
         except Exception as e:
             self.logger.error(f"Error uploading .dtas: {e}")
             raise
@@ -69,11 +62,9 @@ class RBManager:
         '''
         try:
             if self.ps3_ip != None:
-                ps3.restore_dtas.run(ps3_ip=, dl_cache_path=, dta_dirs=)
-            elif self.emu_path != None:
-                emu.restore_dtas.run(ps3_ip=, dl_cache_path=, dta_dirs=)
+                restore_dtas.run(ps3_ip=self.ps3_ip, dl_cache_path=, dta_dirs=)
             else:
-                raise ValueError("PS3 IP and Emulator path not defined")
+                raise ValueError("PS3 IP not defined")
         except Exception as e:
             self.logger.error(f"Error reuploading .dtas: {e}")
             raise
@@ -103,17 +94,4 @@ class RBManager:
             return True
         except Exception as e:
             self.logger.debug(f"Error getting PS3 connection: {e}")
-            return False
-
-    def get_emulator_path(self):
-        '''
-        Attempts to get valid PS3 emulator path
-        '''
-        try:
-            path = input("Please enter the root path to the emulator (i.e. the folder with 'dev_hdd0' in it)\n>: ")
-            if os.path.isdir(path) and 'dev_hdd0' in os.listdir(path):
-                self.emu_path = path
-                return True
-        except Exception as e:
-            self.logger.debug(f"Error getting emulator path: {e}")
             return False
