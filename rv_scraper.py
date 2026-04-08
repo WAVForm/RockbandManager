@@ -2,7 +2,6 @@ import requests
 import json
 import time
 import os
-import requests
 import logging
 import subprocess
 import re

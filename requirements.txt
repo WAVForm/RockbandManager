@@ -1,5 +1,0 @@
-openpyxl
-xlsxwriter
-fastapi
-uvicorn
-requests

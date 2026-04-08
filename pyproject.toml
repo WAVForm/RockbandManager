@@ -1,0 +1,12 @@
+[project]
+name = "rockbandmanager"
+version = "0.1.0"
+description = "Download, edit, and even add custom songs to PS3 Rock Band games."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.135.3",
+    "requests>=2.33.1",
+    "uv>=0.11.3",
+    "uvicorn>=0.42.0",
+]
