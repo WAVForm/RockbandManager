@@ -1,10 +1,10 @@
-import logging, logging.config
+import logging
+import logging.config
 from requests import get, post
-from ipaddress import ip_address
 from re import match
 
-from rb_manager import RBManager
-from song_manager import SongManager
+from src.rbmanager.main import RBManager
+from src.songmanager.main import SongManager
 
 if __name__ == "__main__":
     logging.config.dictConfig({
@@ -39,7 +39,7 @@ if __name__ == "__main__":
                 'level': 'DEBUG',
                 'propagate': False,
             },
-            'SongManager': {
+            'DTAManager': {
                 'handlers': ['file', 'stdout'],
                 'level': 'DEBUG',
                 'propagate': False,
@@ -48,55 +48,43 @@ if __name__ == "__main__":
     })
     logger = logging.getLogger("Client")
 
-    song_manager = SongManager()
-    rb_manager = RBManager()
-
     try:
-        user_input = input("Select one of the following:\n1. Connect to a PS3 Remotely\n2.Provide path to root of emulator\n>: ")
-        match int(user_input):
-            case 1:
-                logger.info("Getting PS3 connection")
-                while True:
-                    if not rb_manager.get_ps3_connection():
-                        logger.error("Could not connect with provided input.")
-                    else:
-                        break
-                logger.info("Successfully got PS3 connection")
-            case 2:
-                logger.info("Getting PS3 emulator path")
-                while True:
-                    if not rb_manager.get_emulator_path():
-                        logger.error("Could not use provided path.")
-                    else:
-                        break
-            case _:
-                print("The selection must be in range")
+        rb_manager = RBManager()
+
+        logger.info("Getting PS3 connection")
+        while True:
+            if not rb_manager.get_ps3_connection():
+                logger.error("Could not connect with provided input.")
+            else:
+                break
+        logger.info("Successfully got PS3 connection")
         
         logger.info("Getting .dta/.dtab directories")
-        if not rb_manager.get_dta_dirs():
-            raise Exception("Failed getting directories of .dta/.dtab files, check log.")
+        rb_manager.get_dta_dirs()
         logger.info("Successfully got .dta/.dtab directories")
 
-        user_input = input("Would you like to restore .dta files back?\nNote: this is in case something messed up the Rockband game and will exit the program immediately after finishing.\n(y/n)>: ")
+        user_input = input("Would you like to restore song data backup?\nNote: this is in case something messed up Rockband and will exit the program immediately after finishing.\n(y/n)>: ")
         if user_input.lower()[0] == 'y':
             try:
                 rb_manager.restore_dtas()
                 logger.info("Successfully restored .dta files")
-            except Exception as e:
+            except Exception:
                 logger.error("Failed restoring .dta files")
             exit()
 
         logger.info("Downloading/copying .dta/.dtab")
         dta_download_attempt = rb_manager.download_dtas()
-        if type(dta_download_attempt) != tuple:
+        if dta_download_attempt is tuple:
             raise Exception("Failed downloading/copying .dta/.dtab files, check log.")
         dta_paths = dta_download_attempt[1]
         logger.info("Successfully downloaded/copied .dta/.dtab")
 
-        logger.info("Processing .dtab files")
+        song_manager = SongManager()
+
+        logger.info("Processing .dta/.dtab files")
         if not song_manager.read_dtas(dta_paths):
             raise Exception("Failed processing .dta/.dtab files, check log.")
-        logger.info("Successfully processed .dtab files")
+        logger.info("Successfully processed .dta/.dtab files")
 
         print("The next part requires the central server for whitelist information")
         try:
@@ -127,9 +115,9 @@ if __name__ == "__main__":
             raise Exception("Failed excluding songs by blacklist, check log.")
         logger.info("Sucessfully excluded songs by blacklist")
 
-        user_input = input("Would you like to manually audit the excluded songs?\n(y/n)>: ")
-        if user_input.lower()[0] == 'y':
-            song_manager.manual_confirmation()
+        # user_input = input("Would you like to manually audit the excluded songs?\n(y/n)>: ")
+        # if user_input.lower()[0] == 'y':
+        #     song_manager.manual_confirmation()
         
         logger.info("Updating excluded songs on server")
         try:

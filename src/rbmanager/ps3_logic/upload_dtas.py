@@ -6,9 +6,10 @@ import os.path as osp
 logger = logging.getLogger("RBManager")
 
 @retryable()
-def run(ps3_ip:str, ul_cache_path:str, dta_dirs:dict):
+def run(ps3_ip:tuple[str,int], ul_cache_path:str, dta_dirs:dict):
     try:
-        with FTP(ps3_ip, encoding='latin-1', timeout=60) as ftp:
+        with FTP(encoding='latin-1', timeout=60) as ftp:
+            ftp.connect(host=ps3_ip[0], port=ps3_ip[1])
             ftp.login()
             for dir in dta_dirs.keys():
                 path = osp.join(ul_cache_path, dir)

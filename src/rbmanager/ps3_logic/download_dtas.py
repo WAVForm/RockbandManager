@@ -6,10 +6,11 @@ import os
 logger = logging.getLogger("RBManager")
 
 @retryable()
-def run(ps3_ip:str, dl_cache_path:str, dta_dirs:dict):
+def run(ps3_ip:tuple[str,int], dl_cache_path:str, dta_dirs:dict):
     try:
         dtas = {}
-        with FTP(ps3_ip, encoding="latin-1", timeout=60) as ftp:
+        with FTP(encoding="latin-1", timeout=60) as ftp:
+            ftp.connect(host=ps3_ip[0],port=ps3_ip[1])
             logger.info("Connected to PS3, logging in and downloading .dta/dtab...")
             ftp.login()
             for dir, dtab_found in dta_dirs.values():

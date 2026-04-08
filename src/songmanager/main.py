@@ -5,7 +5,7 @@ from shutil import copy
 from webbrowser import open as web_open
 from retry import retryable, RetryError
 
-from dta_processor import DTAProcessor
+from .dtaprocessing import dta_to_nested_list, nested_list_to_dta
 
 class Song:
     '''
@@ -17,12 +17,14 @@ class Song:
         self.content = [] #song data from DTA as nested list
         self.excluded = False #should the song be excluded
 
-    def __eq__(self, other:'Song')->bool:
+    def __eq__(self, other)->bool:
+        if not isinstance(other, Song):
+            return False
         return (self.name == other.name) and (self.artist == other.artist)
     def __hash__(self)->int:
         return hash((self.name, self.artist))
     def __str__(self)->str:
-        return (f"|{self.name} by {self.artist}|{f"Excluded" if self.excluded else ""}")
+        return (f"|{self.name} by {self.artist}|{"Excluded" if self.excluded else ""}")
 
 class SongManager:
     '''
@@ -46,10 +48,9 @@ class SongManager:
             '''
             try:
                 self.logger.debug(f"Processing .dta file at {file_path}")
-                processor = DTAProcessor()
                 song_list = []
                 with open(os.path.join(file_path, "songs.dta"), 'r') as dta_f:
-                    nested = processor.dta_to_nested_list(dta_f.read())
+                    nested = dta_to_nested_list(dta_f.read())
                 self.logger.debug(f"Got back a nested list from {file_path}, extracting songs")
                 for each in nested:
                     #checks if every song returned is in a valid format
@@ -189,12 +190,11 @@ class SongManager:
             '''
             try:
                 self.logger.debug(f"Finalizing {len(self.songs[dir])} songs at {dir}")
-                processor = DTAProcessor()
                 modified_content = ""
                 for song in self.songs[dir]:
                     if song in self.kept:
                         self.logger.debug(f"Adding {song} back to .dta at {dir}")
-                        modified_content += processor.nested_list_to_dta(song.content) + "\n"
+                        modified_content += nested_list_to_dta(song.content) + "\n"
                 modified_dtas[dir] = modified_content
                 return True
             except Exception as e:
