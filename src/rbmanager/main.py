@@ -15,17 +15,12 @@ class RBManager:
     def __init__(self):
         self.logger = logging.getLogger("RBManager")
         self.cwd = os.path.abspath(os.path.join(os.path.realpath(__file__), os.pardir)) #keep track of the CWD
-        self.remote_dta_dirs = {} #dirs containing .dta/.dtabs on PS3, path is key, value is true if dtab is found, false otherwise 
+        self.remote_dta_dirs:dict[str,bool] #dirs containing .dta/.dtabs on PS3, path is key, value is true if dtab is found, false otherwise 
+        self.local_dta_dirs:set[str] #all locally downloaded dirs
         self.ps3_connection_info: PS3ConnectionInfo
-
-        with open("config.json", 'r') as f:
-            data = json_load(f)
-            if data["root_game_path"] is not None and len(data["root_game_path"]) > 0:
-                self.root_game_path = data["root_game_path"]
-            if data["dl_cache_path"] is not None and len(data["dl_cache_path"]) > 0:
-                self.download_cache = data["dl_cache_path"]
-            if data["ul_cache_path"] is not None and len(data["ul_cache_path"]) > 0:
-                self.modified_path = data["ul_cache_path"]
+        self.config = json_load(open("config.json", 'r'))["rbmanager"]
+        self.config["dl_cache_path"] = os.path.join(self.cwd,self.config["dl_cache_path"])
+        self.config["ul_cache_path"] = os.path.join(self.cwd, self.config["ul_cache_path"])
 
 
     def get_dta_dirs(self):
@@ -35,7 +30,7 @@ class RBManager:
         self.logger.info("Getting .dta directories...")
         try:
             if self.ps3_connection_info is not None:
-                self.remote_dta_dirs = get_dta_dirs.run(ps3_connection_info=self.ps3_connection_info, root_game_path=self.root_game_path)
+                self.remote_dta_dirs = get_dta_dirs.run(ps3_connection_info=self.ps3_connection_info, root_game_path=self.config["root_game_path"])
             else:
                 raise ValueError("PS3 IP not defined")
         except Exception as e:
@@ -48,7 +43,7 @@ class RBManager:
         '''
         try:
             if self.ps3_connection_info is not None:
-                download_dtas.run(ps3_connection_info=self.ps3_connection_info, dl_cache_path=os.path.join(self.cwd, "cache", "download"), dta_dirs=self.remote_dta_dirs)
+                self.local_dta_dirs = download_dtas.run(ps3_connection_info=self.ps3_connection_info, dl_cache_path=os.path.join(self.cwd, self.config["dl_cache_path"]), dta_dirs=self.remote_dta_dirs)
             else:
                 raise ValueError("PS3 IP not defined")
         except Exception as e:
@@ -61,7 +56,7 @@ class RBManager:
         '''
         try:
             if self.ps3_connection_info is not None:
-                upload_dtas.run(ps3_connection_info=self.ps3_connection_info, ul_cache_path=os.path.join(self.cwd, "cache", "upload"), dta_dirs=self.remote_dta_dirs)
+                upload_dtas.run(ps3_connection_info=self.ps3_connection_info, ul_cache_path=os.path.join(self.cwd, self.config["ul_cache_path"]), dta_dirs=self.remote_dta_dirs)
             else:
                 raise ValueError("PS3 IP not defined")
         except Exception as e:
@@ -104,14 +99,14 @@ class RBManager:
                 with FTP(encoding='latin-1', timeout=60) as ftp:
                     ftp.connect(host=ip,port=port)
                     ftp.login()
-                    ftp.cwd(self.root_game_path)
+                    ftp.cwd(self.config["root_game_path"])
                     next(ftp.mlsd())
 
             def try_nlst():
                 with FTP(encoding='latin-1', timeout=60) as ftp:
                     ftp.connect(host=ip,port=port)
                     ftp.login()
-                    ftp.cwd(self.root_game_path)
+                    ftp.cwd(self.config["root_game_path"])
                     ftp.nlst()
 
 

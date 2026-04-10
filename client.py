@@ -39,7 +39,7 @@ if __name__ == "__main__":
                 'level': 'DEBUG',
                 'propagate': False,
             },
-            'DTAManager': {
+            'SongManager': {
                 'handlers': ['file', 'stdout'],
                 'level': 'DEBUG',
                 'propagate': False,
@@ -64,7 +64,7 @@ if __name__ == "__main__":
         logger.info("Successfully got .dta/.dtab directories")
 
         user_input = input("Would you like to restore song data backup?\nNote: this is in case something messed up Rockband and will exit the program immediately after finishing.\n(y/n)>: ")
-        if user_input.lower()[0] == 'y':
+        if len(user_input) > 0 and user_input.lower()[0] == 'y':
             try:
                 rb_manager.restore_dtas()
                 logger.info("Successfully restored .dta files")
@@ -73,17 +73,13 @@ if __name__ == "__main__":
             exit()
 
         logger.info("Downloading/copying .dta/.dtab")
-        dta_download_attempt = rb_manager.download_dtas()
-        if dta_download_attempt is tuple:
-            raise Exception("Failed downloading/copying .dta/.dtab files, check log.")
-        dta_paths = dta_download_attempt[1]
+        rb_manager.download_dtas()
         logger.info("Successfully downloaded/copied .dta/.dtab")
 
         song_manager = SongManager()
 
         logger.info("Processing .dta/.dtab files")
-        if not song_manager.read_dtas(dta_paths):
-            raise Exception("Failed processing .dta/.dtab files, check log.")
+        song_manager.read_dtas(rb_manager.config["dl_cache_path"],rb_manager.local_dta_dirs)
         logger.info("Successfully processed .dta/.dtab files")
 
         print("The next part requires the central server for whitelist information")
@@ -111,8 +107,7 @@ if __name__ == "__main__":
         logger.info("Succesfully updated whitelist")
 
         logger.info("Excluding songs by blacklist")
-        if not song_manager.exclude_blacklisted():
-            raise Exception("Failed excluding songs by blacklist, check log.")
+        song_manager.exclude_blacklisted()
         logger.info("Sucessfully excluded songs by blacklist")
 
         # user_input = input("Would you like to manually audit the excluded songs?\n(y/n)>: ")
@@ -129,13 +124,11 @@ if __name__ == "__main__":
         logger.info("Successfully updated excluded songs")
 
         logger.info("Finalizing new .dta files for upload")
-        if not song_manager.finalize():
-            raise Exception("Failed finalizing updated .dta files, check log.")
+        song_manager.finalize(rb_manager.config["dl_cache_path"],rb_manager.config["ul_cache_path"])
         logger.info("Successfully finalized new .dta files")
 
         logger.info("Uploading updated .dta/.dtab files")
-        if not rb_manager.upload():
-            raise Exception("Failed uploading updated .dta/.dtab files, check log.")
+        rb_manager.upload()
         logger.info("Successfully uploaded updated .dta/.dtab files")
 
         user_input = input("Would you like to process custom songs?\n(y/n)>: ")

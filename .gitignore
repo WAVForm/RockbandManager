@@ -1,8 +1,7 @@
 .venv
-FROM
-TO
-DB
 *.log
 *.db
 **/__pycache__
 www/secret_code.txt
+*.dta
+*.dtab

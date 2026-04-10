@@ -31,7 +31,7 @@ def treat_nlst_as_mlsd(ftp: FTP):
     return ret
 
 @retryable()
-def get_game_folders(ps3_connection_info:PS3ConnectionInfo, root_game_path):
+def get_game_folders(ps3_connection_info:PS3ConnectionInfo, root_game_path) -> list[str]:
     '''
     Helper function to find game folders
     '''
@@ -60,7 +60,7 @@ def get_game_folders(ps3_connection_info:PS3ConnectionInfo, root_game_path):
         raise RetryError(e)
     
 @retryable()
-def get_usr_dirs(ps3_connection_info:PS3ConnectionInfo, game_folders): 
+def get_usr_dirs(ps3_connection_info:PS3ConnectionInfo, game_folders) -> list[str]: 
     '''
     Helper function to find 'USRDIR' folders
     '''
@@ -89,7 +89,7 @@ def get_usr_dirs(ps3_connection_info:PS3ConnectionInfo, game_folders):
         raise RetryError(e)
 
 @retryable()
-def get_song_folders(ps3_connection_info:PS3ConnectionInfo, usr_dirs):
+def get_song_folders(ps3_connection_info:PS3ConnectionInfo, usr_dirs) -> list[str]:
     '''
     Helper function to find song folders
     '''
@@ -131,7 +131,7 @@ def get_song_folders(ps3_connection_info:PS3ConnectionInfo, usr_dirs):
         raise RetryError(e)
 
 @retryable()
-def find_dta_files(ps3_connection_info:PS3ConnectionInfo, song_folders):
+def find_dta_files(ps3_connection_info:PS3ConnectionInfo, song_folders) -> dict[str,bool]:
     '''
     Helper function to find .dta files
     '''
@@ -169,7 +169,7 @@ def find_dta_files(ps3_connection_info:PS3ConnectionInfo, song_folders):
         logger.error(f"Error finding .dta files: {e}, retry...")
         raise RetryError(e)
 
-def run(ps3_connection_info:PS3ConnectionInfo, root_game_path:str="/dev_hdd0/game"):
+def run(ps3_connection_info:PS3ConnectionInfo, root_game_path:str="/dev_hdd0/game") -> dict[str,bool]:
     game_folders = get_game_folders(ps3_connection_info, root_game_path)
     usr_dirs = get_usr_dirs(ps3_connection_info,game_folders)
     song_folders = get_song_folders( ps3_connection_info, usr_dirs)

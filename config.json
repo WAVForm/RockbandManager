@@ -1,5 +1,7 @@
 {
-    "root_game_path":"dev_hdd0/game",
-    "dl_cache_path":"cache/download",
-    "ul_cache_path":"cache/modified"
+    "rbmanager":{
+        "root_game_path":"dev_hdd0/game",
+        "dl_cache_path":"cache/download",
+        "ul_cache_path":"cache/modified"
+    }
 }

@@ -37,17 +37,18 @@ class SongManager:
         self.excluded = [] #which songs to exclude
         self.whitelist = [] #TODO self.whitelist needed, list of tuples [(artist,song_name)...]
 
-    def read_dtas(self, dta_dirs):
+    def read_dtas(self, dl_cache_path:str, dta_dirs:set[str]):
         '''
         Open each .dta that was downloaded and process it
         '''
         @retryable()
-        def process_dta(file_path):
+        def process_dta(dl_cache_path, dir):
             '''
             Helper function that sends .dta to be processed and return list of songs.
             '''
             try:
-                self.logger.debug(f"Processing .dta file at {file_path}")
+                file_path = os.path.join(dl_cache_path, dir)
+                self.logger.debug(f"Processing .dtab file at {file_path}")
                 song_list = []
                 with open(os.path.join(file_path, "songs.dta"), 'r') as dta_f:
                     nested = dta_to_nested_list(dta_f.read())
@@ -66,7 +67,7 @@ class SongManager:
                     s.artist = each[2][1].strip('"') if each[2][0] == "artist" else ""
                     s.content = each
                     song_list.append(s)
-                self.songs[file_path] = song_list
+                self.songs[dir] = song_list
                 return True
             except Exception as e:
                 self.logger.debug(f"Error processing .dta: {e}, retry...")
@@ -75,16 +76,15 @@ class SongManager:
         self.logger.info("Processing downloaded .dtas")
         try:
             with ThreadPoolExecutor() as executor:
-                dta_process_futures = [executor.submit(process_dta, dir) for dir in dta_dirs]
+                dta_process_futures = [executor.submit(process_dta, dl_cache_path, dir) for dir in dta_dirs]
                 for future in as_completed(dta_process_futures):
                     if not future.result():
                         raise Exception("Failed processing .dtas")
                 amount_of_songs = len([song for songs in self.songs.values() for song in songs])
                 self.logger.info(f"{amount_of_songs} total songs found.")
-            return True
         except Exception as e:
             self.logger.error(f"Error reading .dtas: {e}")
-            return False
+            raise
 
     def exclude_blacklisted(self):
         '''
@@ -119,12 +119,11 @@ class SongManager:
                     if not future.result():
                         raise Exception("Failed excluding a set of songs")
             self.logger.info(f"{len(self.excluded)} total songs excluded")
-            return True
         except Exception as e:
             self.logger.debug(f"Error during automatic exclusion: {e}")
-            return False
+            raise
 
-    def manual_confirmation(self):
+    def __manual_confirmation__(self):
         '''
         Allow the user to keep excluded songs or confirm exclusion of songs manually.
         '''
@@ -178,7 +177,7 @@ class SongManager:
             self.logger.error(f"Error during exclusion confirmation: {e}")
             return False
 
-    def finalize(self):
+    def finalize(self, dl_cache_path:str, ul_cache_path:str):
         '''
         Finalize changes and create the files
         '''
@@ -207,13 +206,12 @@ class SongManager:
             Helper function to write modified .dta file string
             '''
             try:
-                destination_path = dir.replace("FROM", "TO")
-                os.makedirs(destination_path, exist_ok=True) #make path if doesn't exist
-                copy(os.path.join(dir, "songs.dta"), os.path.join(destination_path, "songs.dtab")) #create backup .dta
-                self.logger.debug(f"Writing modified content to {destination_path}")
-                with open(os.path.join(destination_path, "songs.dta"), "w") as dta_f: #make the dta
+                os.makedirs(os.path.join(ul_cache_path, dir), exist_ok=True) #make path if doesn't exist
+                copy(os.path.join(dl_cache_path, dir, "songs.dta"), os.path.join(ul_cache_path, dir, "songs.dtab")) #create backup .dta
+                self.logger.debug(f"Writing modified content to {os.path.join(ul_cache_path, dir, "songs.dtab")}")
+                with open(os.path.join(ul_cache_path, dir, "songs.dta"), "w") as dta_f: #make the dta
                     dta_f.write(modified_dtas[dir])
-                self.logger.debug(f"Done writing to {destination_path}")
+                self.logger.debug(f"Done writing to {os.path.join(ul_cache_path, dir)}")
                 return True
             except Exception as e:
                 self.logger.debug(f"Error writing modified .dta originally from {dir}: {e}")
@@ -236,7 +234,6 @@ class SongManager:
                         raise Exception("a .dta file string failed to be writted")
 
             self.logger.info("Modified .dta files finalized")
-            return True
         except Exception as e:
             self.logger.debug(f"Error finalizing modified .dtas: {e}")
-            return False
+            raise
