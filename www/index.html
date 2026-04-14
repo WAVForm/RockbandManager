@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rockband Editor</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <div class="container">
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('officials')">Official Songs</button>
+            <button class="tab" onclick="switchTab('customs')">Custom Songs</button>
+        </div>
+
+        <div class="content">
+            <div id="message-area" style="position: absolute;top: 10px;left: calc(50vw - 130px);"></div>
+            
+            <div class="actions">
+                 <input type="text" id="search-bar" placeholder="🔍 Search..." oninput="handleSearch(this.value)"/>
+                <button class="btn" onclick="loadData()">🔄 Refresh Data</button>
+                <button class="btn" id="save-btn" onclick="saveChanges()">💾 Save Changes</button>
+            </div>
+
+            <div id="customs-content" style="display: none;">
+                <div class="stats" id="customs-stats"></div>
+                <div class="table-container" id="customs-table-container">
+                    <table id="customs-table">
+                        <thead>
+                            <tr>
+                                <th class="header-narrow" id="wanted-header">Wanted</th>
+                                <th>Song Title</th>
+                                <th>Artist</th>
+                                <th class="header-narrow">Full Band</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="officials-content">
+                <div class="stats" id="officials-stats"></div>
+                <div class="table-container" id="officials-table-container">
+                    <table id="officials-table">
+                        <thead>
+                            <tr>
+                                <th class="header-narrow" id="wanted-header">Wanted</th>
+                                <th>Song Title</th>
+                                <th>Artist</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="loading" class="loading" style="display: none;">
+                <h3>Loading data...</h3>
+            </div>
+        </div>
+    </div>
+
+    <script src="index.js" defer></script>
+</body>
+</html>

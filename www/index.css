@@ -1,0 +1,215 @@
+:root {
+    --base-color: #334B3D;
+    --alt-color: #96BE99;
+    --shadow-color: #416450;
+    --image-bg: white;
+    --border-rad: 2em;
+    --section-distance: 5px;
+    --fade-time: 0.5s;
+    --navbar-height: 50px;
+    --menu-item-height: 50px;
+    --menu-underline-height: 5px;
+    --button-padding: 10px;
+    --button-spacing: 5px;
+    --dropdown-padding: 10px;
+    --dropdown-spacing: 10px;
+}
+
+html {
+    min-width: 350px;
+}
+
+body {
+    margin: 0px;
+    font-family: 'Courier New', sans-serif;
+    background-color: var(--base-color);
+    text-shadow: 1px 1px 0px var(--shadow-color);
+}
+
+.container {
+    max-width: 1400px;
+    margin: 20px auto;
+    border-radius: var(--border-rad);
+    overflow: hidden;
+}
+
+.tabs {
+    display: flex;
+    height: 50px;
+}
+
+.tab {
+    flex: 1;
+    padding: var(--button-padding);
+    text-align: center;
+    background: var(--alt-color);
+    cursor: pointer;
+    font-size: 1.2rem;
+    color: var(--base-color);
+    transition: all 0.3s ease;
+    border-color: var(--base-color);
+    border-width: 1px;
+}
+
+.tab:hover {
+    background: #416450;
+    color: white;
+}
+
+.tab.active {
+    background-color: var(--base-color);
+    color: var(--alt-color);
+    border-bottom: solid var(--menu-underline-height) var(--base-color);
+}
+
+.content {
+    padding: 10px;
+    background-color: var(--alt-color);
+    
+}
+
+.table-container {
+    overflow-y: scroll;
+    overflow-x: auto;
+    max-height: inherit;
+    box-shadow: inset 0 4px 15px rgba(0, 0, 0, 0.75);
+}
+
+table {
+    width: 100%;
+    font-size: 1rem;
+}
+
+th {
+    background-color: var(--base-color);
+    color: var(--alt-color);
+    padding: var(--button-padding);
+    text-align: left;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    transition: all 0.3s ease;
+    text-wrap: nowrap;
+}
+
+td {
+    padding: var(--button-padding);
+    border: 1px solid var(--base-color);
+}
+
+tr{
+    border-radius: 1em;
+}
+
+tr:hover {
+    background: var(--alt-color);
+}
+
+.wanted-checkbox {
+    width: 25px;
+    height: 25px;
+    cursor: pointer;
+    accent-color: var(--base-color);
+}
+
+.wanted-cell {
+    text-align: center;
+}
+
+.song-title, .song-artist {
+    max-width: 300px;
+    overflow: hidden;
+}
+
+.full-band{
+    text-align: center;
+}
+
+.file-id {
+    font-family: 'Courier New', monospace;
+    background: var(--alt-color);
+    padding: 5px;
+    border-radius: 0.2em;
+}
+
+.actions {
+    display: flex;
+    gap: 5px;
+    height: 50px;
+    padding: 10px;
+}
+
+#search-bar{
+    border: 2px solid var(--base-color);
+    border-radius: var(--border-rad);
+    flex-grow: 0.5;
+    margin-right: auto;
+    padding-left: 15px;
+}
+
+.btn {
+    padding: var(--button-padding);
+    border: none;
+    border-radius: var(--border-rad);
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    background-color: var(--base-color);
+    color: var(--alt-color);
+}
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(20px, 1fr));
+    gap: var(--section-distance);
+    margin-bottom: var(--section-distance);
+}
+
+.stat-card {
+    background-color: var(--base-color);
+    color: var(--alt-color);
+    padding: var(--button-padding);
+    border-radius: var(--border-rad);
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.stat-number {
+    font-weight: bolder;
+}
+
+.loading {
+    text-align: center;
+    padding: var(--button-padding);
+    color: white;
+    background-color: #416450;
+}
+
+.error, .success {
+    padding: 15px;
+    border-radius: var(--border-rad);
+    margin-bottom: var(--section-distance);
+    text-align: center;
+}
+
+.error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border-left: solid 5px #dc3545;
+}
+
+.success {
+    background-color: #d4edda;
+    color: #155724;
+    border-left: solid 5px #28a745;
+}
+
+.header-narrow{
+    width: 60px;
+}
+
+.pending-changes{
+    background-color: yellow;
+    color: black;
+    font-weight: bolder;
+}
