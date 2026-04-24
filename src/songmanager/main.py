@@ -6,25 +6,7 @@ from webbrowser import open as web_open
 from retry import retryable, RetryError
 
 from .dtaprocessing import dta_to_nested_list, nested_list_to_dta
-
-class Song:
-    '''
-    Store the name and artist of a song, if it was excluded and why, and all the text content
-    '''
-    def __init__(self):
-        self.name = "" #name of song
-        self.artist = "" #artist of song
-        self.content = [] #song data from DTA as nested list
-        self.excluded = False #should the song be excluded
-
-    def __eq__(self, other)->bool:
-        if not isinstance(other, Song):
-            return False
-        return (self.name == other.name) and (self.artist == other.artist)
-    def __hash__(self)->int:
-        return hash((self.name, self.artist))
-    def __str__(self)->str:
-        return (f"|{self.name} by {self.artist}|{"Excluded" if self.excluded else ""}")
+from src.models import Song
 
 class SongManager:
     '''

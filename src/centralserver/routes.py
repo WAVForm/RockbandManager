@@ -1,77 +1,61 @@
-from h11 import Data
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import logging
-from .models import Song, SongHash
+from src.models import Song
 from centralserver.database_manager import DatabaseManager
 
 logger = logging.getLogger("CentralServer")
 db_manager = DatabaseManager()
 router = FastAPI()
 
-@router.get("/ids/{table}", response_model=list[str] | dict[str,str])
-async def get_song_data(table:str):
-    """Get all song data as JSON"""
+@router.get("/ids/{type}", response_model=list[str])
+async def get_song_ids(type:str):
     try:
-        return db_manager.get_all_ids(table)
+        return db_manager.get_all_ids(type)
     except Exception as e:
-        msg = f"Error getting customs: {e}" 
+        msg = f"Error getting all ids of type {type}: {e}" 
         logger.error(msg)
         return JSONResponse({"error":msg}, status_code=400)
 
-# @router.get("/songs/{table}", response_model=SongsModel)
-# async def get_song_data(table:str):
-#     """Get all song data as JSON"""
-#     try:
-#         return db_manager.get_all_fields(table)
-#     except Exception as e:
-#         msg = f"Error getting customs: {e}" 
-#         logger.error(msg)
-#         return JSONResponse({"error":msg}, status_code=400)
+@router.get("/whitelist", response_model=list[str])
+def get_whitelist():
+    try:
+        return db_manager.get_wanted_ids("official")
+    except Exception as e:
+        msg = f"Error getting whitelist: {e}"
+        logger.error(msg)
+        return JSONResponse({"error":msg}, status_code=400)
 
-# @router.post("/songs/{table}")
-# async def update_customs(request:Request, table:str):
-#     """Update song data"""
-#     try:
-#         data = await request.json()
-#         db_manager.update_wanted(data["updates"], target_table=table)
-#         return {"success": True, "message": f"Updated {len(data["updates"])} customs songs"}
-#     except Exception as e:
-#         msg = f"Error updating customs: {e}" 
-#         logger.error(msg)
-#         return JSONResponse({"error": msg},status_code=400)
-
-# @router.get("/whitelist")
-# def get_whitelist():
-#     try:
-#         return db_manager.get_wanted_official_songs()
-#     except Exception as e:
-#         msg = f"[Server] Error getting whitelist: {e}"
-#         logger.error(msg)
-#         return JSONResponse({"error":msg}, status_code=400)
+@router.get("/dlqueue", response_model=list[str])
+def get_wanted_undownloaded():
+    try:
+        return db_manager.get_wanted_undownloaded_ids()
+    except Exception as e:
+        msg = f"Error getting download queue: {e}"
+        logger.error(msg)
+        return JSONResponse({"error":msg}, status_code=400)
 
 
+@router.get("/fulls", response_model=list[Song])
+async def get_full_records(ids:list[str]):
+    """Get all song data as JSON"""
+    try:
+        return db_manager.get_full_records(ids)
+    except Exception as e:
+        msg = f"Error getting full records for ids ({ids}): {e}" 
+        logger.error(msg)
+        return JSONResponse({"error":msg}, status_code=400)
 
+@router.post("/")
+async def update_songs(song_updates:list[Song]):
+    """Get all song data as JSON"""
+    try:
+        return db_manager.store_songs(song_updates)
+    except Exception as e:
+        msg = f"Error updating songs ({song_updates}): {e}" 
+        logger.error(msg)
+        return JSONResponse({"error":msg}, status_code=400)
 
-
-# @router.post("/songs")
-# async def update_officials(request: fastapi.Request, response: fastapi.Response):
-#     try:
-#         logger.debug("Updating 'officials' table in DB")
-#         logger.debug("Getting json from request")
-#         songs = await request.json()
-#         logger.debug("Checking if songs is list")
-#         if not isinstance(songs, list):
-#             raise ValueError("Expected list of songs")
-#         logger.debug("Firing up DatabaseManager")
-#         db_m = DatabaseManager()
-#         logger.debug("Saving songs to 'officials'")
-#         db_m.save_songs(songs, "officials")                
-#         return "OK"
-#     except Exception as e:
-#         logger.error(f"Error during updating db: {e}")
-#         response.status_code = 400
-#         return f"[Server] Error updating whitelist: {e}"
 
 router.mount("/", StaticFiles(directory="www"), name="www")

@@ -5,6 +5,16 @@
         "ul_cache_path":"cache/modified"
     },
     "dbmanager":{
-        "file_path":"rb.db"
+        "file_path":"rb.db",
+        "table_config":{
+            "officials": {
+                "keys": ["artist", "title", "wanted"],
+                "store_query": "INSERT OR REPLACE INTO customs (id, artist, title, wanted) VALUES (?, ?, ?, ?)"
+            },
+            "customs": {
+                "keys": ["artist", "title", "diff_drums", "diff_guitar", "diff_bass", "diff_vocals", "download_url", "wanted", "downloaded", "download_path"],
+                "store_query": "INSERT OR REPLACE INTO customs (id, artist, title, diff_drums, diff_guitar, diff_bass, diff_vocals, download_url, wanted, downloaded, download_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+        }
     }
 }
