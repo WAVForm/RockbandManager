@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: rockbandmanager
+Version: 0.1.0
+Summary: Download, edit, and even add custom songs to PS3 Rock Band games.
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.135.3
+Requires-Dist: requests>=2.33.1
+Requires-Dist: ty>=0.0.29
+Requires-Dist: uv>=0.11.3
+Requires-Dist: uvicorn>=0.42.0
+
+
+
+# Development
+For the sake of sanity, use an emulator instead of testing on live PS3 hardware. Not only is there a chance to brick your console, but also it takes FOREVER to download and reinstall the game and DLC should it be messed up. Start by downloading an emulator: `https://rpcs3.net/download`, install RB3 and at least one DLC pack.
+

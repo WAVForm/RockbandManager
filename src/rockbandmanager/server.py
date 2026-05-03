@@ -1,17 +1,10 @@
 import logging, logging.config
-import asyncio
-import sqlite3
-import os
-import requests
-import fastapi
 import uvicorn
-import contextlib
-import datetime
-import uuid
+from rockbandmanager.utils.db import init_db
 
 #from rv_scraper import RVScraper
 #from database_manager import DatabaseManager
-from centralserver.routes import router
+from rockbandmanager.routes.server import router
 
 if __name__ == "__main__":
     logging.config.dictConfig({
@@ -58,5 +51,6 @@ if __name__ == "__main__":
             },
         },
     })     
+    init_db()
 
     uvicorn.run(router, host="0.0.0.0", port=8000)

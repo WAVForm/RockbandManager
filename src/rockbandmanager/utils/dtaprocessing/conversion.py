@@ -1,12 +1,16 @@
 from re import findall
+from typing import Any
+import logging
 
 '''Processes DTAs and turns them into native Python data collections, and vice versa'''
 
-def tokenize(dta: str):
+logger = logging.getLogger("Utilities")
+
+def tokenize(dta: str) -> list[str]:
     return findall(r'\'[^\']*\'|\"[^\"]*\"|\(|\)|;[^\n]*|[^\s()]+', dta)
 
-def parse_tokens(tokens, i=0):
-    parsed = []
+def parse_tokens(tokens, i=0) -> tuple[int, list[Any]]:
+    parsed:list[Any] = []
     while i < len(tokens):
         token = tokens[i]
 
@@ -23,7 +27,7 @@ def parse_tokens(tokens, i=0):
         i += 1
     return i, parsed
 
-def parse_atom(token):
+def parse_atom(token) -> Any:
     if token.startswith("\'") and token.endswith("\'"):
         return token[1:-1]
     if token.upper() == 'TRUE':
@@ -40,12 +44,12 @@ def parse_atom(token):
     except ValueError:
         return token
 
-def dta_to_nested_list(dta):
+def dta_to_nested_list(dta) -> list[Any]:
     tokens = tokenize(dta)
     _, parsed = parse_tokens(tokens)
     return parsed
 
-def nested_list_to_dta(nested,level=1,indent="   "):
+def nested_list_to_dta(nested,level=1,indent="   ") -> str:
     s = ""
     if isinstance(nested, list):
         s = "("

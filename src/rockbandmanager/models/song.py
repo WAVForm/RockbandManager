@@ -6,14 +6,19 @@ class Song(BaseModel):
     id: str
     artist: str
     title: str
-    wanted: bool
-    downloaded: bool
-    type: str
-    diff_drums: int | None
-    diff_guitar: int | None
-    diff_bass: int | None
-    diff_vocals: int | None
-    download_url: str| None
+    wanted: bool = None
+    downloaded: bool = None
+    diff_band: int = -1
+    diff_drums: int = -1
+    diff_guitar: int = -1
+    diff_bass: int = -1
+    diff_vocals: int = -1
+    diff_keys: int = -1
+    diff_real_guitar: int = -1
+    diff_real_bass: int = -1
+    diff_real_keys: int = -1
+    download_url: str = None
+    content: str = None
 
     @model_validator(mode='before')
     @classmethod

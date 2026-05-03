@@ -1,19 +1,20 @@
-from retry import retryable, RetryError
+from rockbandmanager.utils.retry import retryable
 import logging
 from ftplib import FTP
 import os.path as osp
-from .models import PS3ConnectionInfo
+from rockbandmanager.models.endpoint import PS3ConnectionInfo
 
-logger = logging.getLogger("RBManager")
+logger = logging.getLogger("Utilities")
 
-'''
-Due to stability issues with connecting to PS3, all functions automatically retry and a new FTP connection is made each step.
-'''
+def _treat_nlst_as_mlsd(ftp: FTP) -> list[tuple[str,dict[str,str]]]:
+    """Helper function to enumerate directories and determine whether entry is a file or directory
 
-def treat_nlst_as_mlsd(ftp: FTP):
-    '''
-    Helper function to enumerate directories and determine whether entry is a file or directory
-    '''
+    Args:
+        ftp (FTP):
+
+    Returns:
+        list[tuple[str,dict[str,str]]]: list in the style of that returned by mlsd(): list[(name,type)]
+    """
     ret = []
 
     lines = []
@@ -31,10 +32,16 @@ def treat_nlst_as_mlsd(ftp: FTP):
     return ret
 
 @retryable()
-def get_game_folders(ps3_connection_info:PS3ConnectionInfo, root_game_path) -> list[str]:
-    '''
-    Helper function to find game folders
-    '''
+def _get_game_folders(ps3_connection_info:PS3ConnectionInfo, root_game_path:str) -> list[str]:
+    """Helper function to find game folders
+
+    Args:
+        ps3_connection_info (PS3ConnectionInfo): PS3 connection information
+        root_game_path (_type_): root directory where PS3 game data can be found
+
+    Returns:
+        list[str]: list of possible game directories found inside game data folder
+    """
     try:
         game_folders = []
         with FTP(encoding="latin-1", timeout=60) as ftp:
@@ -46,7 +53,7 @@ def get_game_folders(ps3_connection_info:PS3ConnectionInfo, root_game_path) -> l
             if ps3_connection_info.ls_style == "mlsd":
                 ls = ftp.mlsd()
             elif ps3_connection_info.ls_style == "nlst":
-                ls = treat_nlst_as_mlsd(ftp)
+                ls = _treat_nlst_as_mlsd(ftp)
 
             for game_folder, t in ls:
                 if game_folder == "." or game_folder == "..":
@@ -57,13 +64,19 @@ def get_game_folders(ps3_connection_info:PS3ConnectionInfo, root_game_path) -> l
         return game_folders
     except Exception as e:
         logger.error(f"Error finding game folders: {e}, retry...")
-        raise RetryError(e)
+        raise
     
 @retryable()
-def get_usr_dirs(ps3_connection_info:PS3ConnectionInfo, game_folders) -> list[str]: 
-    '''
-    Helper function to find 'USRDIR' folders
-    '''
+def _get_usr_dirs(ps3_connection_info:PS3ConnectionInfo, game_folders:list[str]) -> list[str]: 
+    """Helper function to find 'USRDIR' folders within possible game folders
+
+    Args:
+        ps3_connection_info (PS3ConnectionInfo): PS3 connection information 
+        game_folders (list[str]): list of directories for possible game folders
+
+    Returns:
+        list[str]: list of USRDIR directories, marking more plausible game folders
+    """
     try:
         usr_dirs = []
         with FTP(encoding="latin-1", timeout=60) as ftp:
@@ -76,7 +89,7 @@ def get_usr_dirs(ps3_connection_info:PS3ConnectionInfo, game_folders) -> list[st
                 if ps3_connection_info.ls_style == "mlsd":
                     ls = ftp.mlsd()
                 elif ps3_connection_info.ls_style == "nlst":
-                    ls = treat_nlst_as_mlsd(ftp)
+                    ls = _treat_nlst_as_mlsd(ftp)
 
                 for in_game_folder, t in ls:
                     if in_game_folder == "USRDIR":
@@ -86,13 +99,19 @@ def get_usr_dirs(ps3_connection_info:PS3ConnectionInfo, game_folders) -> list[st
         return usr_dirs
     except Exception as e:
         logger.error(f"Error finding USRDIRs: {e}, retry...")
-        raise RetryError(e)
+        raise
 
 @retryable()
-def get_song_folders(ps3_connection_info:PS3ConnectionInfo, usr_dirs) -> list[str]:
-    '''
-    Helper function to find song folders
-    '''
+def _get_song_folders(ps3_connection_info:PS3ConnectionInfo, usr_dirs:list[str]) -> list[str]:
+    """Helper function to find song folders within USRDIR directories
+
+    Args:
+        ps3_connection_info (PS3ConnectionInfo): PS3 connection information
+        usr_dirs (list[str]): list of directories containing USRDIR folders
+
+    Returns:
+        list[str]: list of 'songs' directories within USRDIR folders
+    """
     try:
         song_folders = []
         with FTP(encoding="latin-1", timeout=60) as ftp:
@@ -105,7 +124,7 @@ def get_song_folders(ps3_connection_info:PS3ConnectionInfo, usr_dirs) -> list[st
                 if ps3_connection_info.ls_style == "mlsd":
                     ls1 = ftp.mlsd()
                 elif ps3_connection_info.ls_style == "nlst":
-                    ls1 = treat_nlst_as_mlsd(ftp)
+                    ls1 = _treat_nlst_as_mlsd(ftp)
 
                 for in_usr_dir,t in ls1:
                     if in_usr_dir == "." or in_usr_dir == "..":
@@ -117,7 +136,7 @@ def get_song_folders(ps3_connection_info:PS3ConnectionInfo, usr_dirs) -> list[st
                         if ps3_connection_info.ls_style == "mlsd":
                             ls2 = ftp.mlsd()
                         elif ps3_connection_info.ls_style == "nlst":
-                            ls2 = treat_nlst_as_mlsd(ftp)
+                            ls2 = _treat_nlst_as_mlsd(ftp)
 
                         for song_folder,t in ls2:
                             if song_folder == "songs":
@@ -128,13 +147,19 @@ def get_song_folders(ps3_connection_info:PS3ConnectionInfo, usr_dirs) -> list[st
         return song_folders
     except Exception as e:
         logger.error(f"Error finding song folders: {e}, retry...")
-        raise RetryError(e)
+        raise
 
 @retryable()
-def find_dta_files(ps3_connection_info:PS3ConnectionInfo, song_folders) -> dict[str,bool]:
-    '''
-    Helper function to find .dta files
-    '''
+def _find_dta_files(ps3_connection_info:PS3ConnectionInfo, song_folders:list[str]) -> dict[str,bool]:
+    """Helper function to find .dta files
+
+    Args:
+        ps3_connection_info (PS3ConnectionInfo): PS3 connection information
+        song_folders (list[str]): list of directories containing 'songs' folder
+
+    Returns:
+        dict[str,bool]: key is directory .dta/ab file was found, value is if .dtab was found
+    """
     try:
         dta_dirs = {}
         with FTP(encoding="latin-1", timeout=60) as ftp:
@@ -149,7 +174,7 @@ def find_dta_files(ps3_connection_info:PS3ConnectionInfo, song_folders) -> dict[
                 if ps3_connection_info.ls_style == "mlsd":
                     ls = ftp.mlsd()
                 elif ps3_connection_info.ls_style == "nlst":
-                    ls = treat_nlst_as_mlsd(ftp)
+                    ls = _treat_nlst_as_mlsd(ftp)
                 
                 for file,t in ls:
                     if t["type"] == "file":
@@ -167,10 +192,23 @@ def find_dta_files(ps3_connection_info:PS3ConnectionInfo, song_folders) -> dict[
         return dta_dirs
     except Exception as e:
         logger.error(f"Error finding .dta files: {e}, retry...")
-        raise RetryError(e)
+        raise
 
-def run(ps3_connection_info:PS3ConnectionInfo, root_game_path:str="/dev_hdd0/game") -> dict[str,bool]:
-    game_folders = get_game_folders(ps3_connection_info, root_game_path)
-    usr_dirs = get_usr_dirs(ps3_connection_info,game_folders)
-    song_folders = get_song_folders( ps3_connection_info, usr_dirs)
-    return find_dta_files(ps3_connection_info,song_folders)
+@retryable()
+def run(ps3_connection_info:PS3ConnectionInfo, root_game_path:str) -> dict[str,bool]:
+    """Attempts to get directories where .dta/.dtab files are found
+
+    Args:
+        ps3_connection_info (PS3ConnectionInfo): PS3 connection info
+        root_game_path (str, optional): Directory where game data folders are found.
+    Returns:
+        dict[str,bool]: key is the directory, value is if a .dtab was found
+    """
+    try:
+        game_folders = _get_game_folders(ps3_connection_info, root_game_path)
+        usr_dirs = _get_usr_dirs(ps3_connection_info,game_folders)
+        song_folders = _get_song_folders( ps3_connection_info, usr_dirs)
+        return _find_dta_files(ps3_connection_info,song_folders)
+    except Exception as e:
+        logger.debug(f"Error getting DTA directories from PS3: {e}")
+        raise
